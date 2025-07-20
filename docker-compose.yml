@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Spring Boot Service (backend)
+  backend:
+    build:
+      context: ./backend
+      target: development
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+    volumes:
+      - ./backend:/app
+      - maven_cache:/root/.m2
+    networks:
+      - reserva-network
+
+  # Frontend Vite Service
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_DEV_MODE=true
+    volumes:
+      - ./frontend:/app
+      - node_modules_cache:/app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - reserva-network
+
+volumes:
+  maven_cache:
+  node_modules_cache:
+
+networks:
+  reserva-network:
+    driver: bridge

@@ -1,0 +1,11 @@
+/* index.css */
+/* Import date range picker styles FIRST */
+@import 'react-date-range/dist/styles.css';
+@import 'react-date-range/dist/theme/default.css';
+
+/* Then Tailwind */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles for date picker */

@@ -1,0 +1,172 @@
+{
+  "BGE": {
+    "parkName": "Breeduyn Village",
+    "accommodations": [
+      {
+        "AccommodationInfo": {
+          "Code": "6pcbg",
+          "Name": "Komfort 6",
+          "NameWithoutAddition": "Komfort 6",
+          "NameAddition": "",
+          "ParkCode": "BGE",
+          "ParkName": "Breeduyn Village",
+          "ParkNameShort": "Breeduyn Village",
+          "Location": "Bredene, West-Vlaanderen (BE)",
+          "RegionCode": "West_Flanders",
+          "CountryCode": "BE",
+          "City": "Bredene",
+          "ThumbnailImageUrls": [
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9264997-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9264997-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9264997-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9264997-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265124-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265124-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265124-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265124-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265079-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265079-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265079-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265079-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265097-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265097-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265097-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265097-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265044-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265044-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265044-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265044-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265025-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265025-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265025-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265025-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265061-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265061-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265061-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265061-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265105-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265105-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265105-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265105-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265152-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265152-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265152-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265152-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265159-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265159-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265159-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265159-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265177-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265177-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265177-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265177-3x2?t=w960"
+            },
+            {
+              "imageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265213-3x2?t=w350",
+              "imageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265213-3x2?t=cw480",
+              "retinaImageUrl": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265213-3x2?t=cw800",
+              "retinaImageUrlLarge": "https://mss-p-014-delivery.stylelabs.cloud/api/public/content/9265213-3x2?t=w960"
+            }
+          ],
+          "ParkDetailPageLink": {
+            "Text": "Breeduyn Village",
+            "Url": "https://www.roompot.de/parks/breeduyn-village"
+          },
+          "DetailPageLink": {
+            "Text": "Weitere Informationen",
+            "Url": "https://www.roompot.de/parks/breeduyn-village/unterkuenfte/komfort-6"
+          },
+          "IsRenewed": false,
+          "Usps": [
+            "95 m²",
+            "Frei stehend oder Doppelhaushälfte",
+            "Mindestens 3 Schlafzimmer",
+            "Mindestens 2 Badezimmer",
+            "Geeignet für 6 Personen"
+          ],
+          "Label": {
+            "HasLabel": false,
+            "Title": null,
+            "Class": null
+          },
+          "RenewedLabel": "Modernisiert",
+          "BathroomUspAmount": 1,
+          "BedroomUspAmount": 1,
+          "AreaCalcText": "95 m²",
+          "BuildingConstruction": "Frei stehend oder Doppelhaushälfte",
+          "Brand": "RGP"
+        },
+        "stayDuration": {
+          "arrivalDate": "2025-08-29T00:00:00",
+          "departureDate": "2025-09-01T00:00:00",
+          "numberOfNights": 3,
+          "forNumberOfNightsText": "3 Nächte"
+        },
+        "PriceInfo": {
+          "accommodationCode": "6pcbg",
+          "stayType": 925,
+          "bestRentalPriceInCents": 36900,
+          "bestIncludePriceInCents": 52338,
+          "bestTotalPriceInCents": 57558,
+          "priceDisclaimers": [
+            "inkl. aller Zuschläge für 6 Personen"
+          ],
+          "formattedPrice": "576",
+          "formattedOriginalPrice": "",
+          "priceType": "",
+          "priceLabel": "",
+          "bestRentalPriceInEuros": 369.0
+        },
+        "Disclaimer": {
+          "Disclaimer": "Der angegebene Preis beinhaltet alle unvermeidbaren Nebenkosten wie Bettwäsche und Kurtaxe.",
+          "priceDisclaimerBasedOnAccommodationText": "Basierend auf dem Unterkunftstyp",
+          "accommodationText": "Komfort 6 6pcbg",
+          "receiptCallEnabled": false
+        },
+        "MarkersViewModel": {
+          "markers": [
+            {
+              "parkCode": "BGE",
+              "title": "Breeduyn Village",
+              "position": {
+                "lat": 51.252033,
+                "lng": 2.975387
+              }
+            }
+          ],
+          "promotions": null
+        },
+        "Authority": null,
+        "ParkCode": "BGE",
+        "AccommodationCode": "6pcbg",
+        "FavouriteButton": {
+          "FavouriteButtonText": null,
+          "AccommodationCode": "6pcbg",
+          "ParkCode": "BGE",
+          "IsFavourite": false
+        }
+      }
+    ]
+  }
+}
