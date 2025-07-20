@@ -97,7 +97,7 @@ ReservaSynch is a modern hotel booking application that integrates with the Belv
 docker-compose -f docker-compose.prod.yml up -d
 
 # Access at:
-# Frontend: http://localhost:80
+# Frontend: http://localhost:5173
 # Backend: http://localhost:8080
 ```
 
