@@ -5,6 +5,8 @@ COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ .
 RUN npm run build
+# Verify the build output
+RUN ls -la dist/ || ls -la build/ || echo "No dist or build folder found"
 
 # === Backend Build ===
 FROM openjdk:17-jdk-alpine AS backend-build
@@ -19,73 +21,145 @@ RUN ./mvnw package -DskipTests
 # === Final Stage ===
 FROM openjdk:17-jdk-alpine
 
-# Install nginx and supervisor
-RUN apk add --no-cache nginx supervisor
+# Install required packages
+RUN apk add --no-cache nginx supervisor bash curl
 
-# Copy frontend build
-COPY --from=frontend-build /app/frontend/dist /usr/share/nginx/html
+# Create required directories
+RUN mkdir -p /run/nginx /var/log/supervisor /usr/share/nginx/html
+
+# Copy frontend build (check both dist and build folders)
+COPY --from=frontend-build /app/frontend/dist /usr/share/nginx/html 2>/dev/null || \
+     COPY --from=frontend-build /app/frontend/build /usr/share/nginx/html 2>/dev/null || \
+     echo "Frontend build not found"
+
+# Create a fallback index.html if frontend build failed
+RUN if [ ! -f /usr/share/nginx/html/index.html ]; then \
+        echo '<!DOCTYPE html><html><body><h1>Frontend not built correctly</h1></body></html>' > /usr/share/nginx/html/index.html; \
+    fi
 
 # Copy backend JAR
 COPY --from=backend-build /app/backend/target/*.jar /app/backend.jar
 
-# Create directories
-RUN mkdir -p /etc/nginx/http.d /var/log/supervisor
+# Remove ALL default nginx configs
+RUN rm -rf /etc/nginx/conf.d/* /etc/nginx/sites-enabled/* /etc/nginx/sites-available/*
 
-# Create Nginx config - IMPORTANT: Remove default nginx config first
-RUN rm -f /etc/nginx/http.d/default.conf && \
-    rm -f /etc/nginx/conf.d/default.conf && \
-    echo 'server {' > /etc/nginx/http.d/app.conf && \
-    echo '    listen 80;' >> /etc/nginx/http.d/app.conf && \
-    echo '    server_name _;' >> /etc/nginx/http.d/app.conf && \
-    echo '    ' >> /etc/nginx/http.d/app.conf && \
-    echo '    root /usr/share/nginx/html;' >> /etc/nginx/http.d/app.conf && \
-    echo '    index index.html;' >> /etc/nginx/http.d/app.conf && \
-    echo '    ' >> /etc/nginx/http.d/app.conf && \
-    echo '    location / {' >> /etc/nginx/http.d/app.conf && \
-    echo '        try_files $uri $uri/ /index.html;' >> /etc/nginx/http.d/app.conf && \
-    echo '    }' >> /etc/nginx/http.d/app.conf && \
-    echo '    ' >> /etc/nginx/http.d/app.conf && \
-    echo '    location /api/ {' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_pass http://127.0.0.1:8080;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_http_version 1.1;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_set_header Upgrade $http_upgrade;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_set_header Connection "upgrade";' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_set_header Host $host;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_set_header X-Real-IP $remote_addr;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_set_header X-Forwarded-Proto $scheme;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_connect_timeout 60s;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_send_timeout 60s;' >> /etc/nginx/http.d/app.conf && \
-    echo '        proxy_read_timeout 60s;' >> /etc/nginx/http.d/app.conf && \
-    echo '    }' >> /etc/nginx/http.d/app.conf && \
-    echo '}' >> /etc/nginx/http.d/app.conf
+# Create main nginx.conf
+RUN cat > /etc/nginx/nginx.conf << 'EOF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /run/nginx/nginx.pid;
 
-# Create supervisord config
-RUN echo '[supervisord]' > /etc/supervisord.conf && \
-    echo 'nodaemon=true' >> /etc/supervisord.conf && \
-    echo 'logfile=/var/log/supervisor/supervisord.log' >> /etc/supervisord.conf && \
-    echo '' >> /etc/supervisord.conf && \
-    echo '[program:backend]' >> /etc/supervisord.conf && \
-    echo 'command=java -jar /app/backend.jar --server.port=8080' >> /etc/supervisord.conf && \
-    echo 'autostart=true' >> /etc/supervisord.conf && \
-    echo 'autorestart=true' >> /etc/supervisord.conf && \
-    echo 'stdout_logfile=/dev/stdout' >> /etc/supervisord.conf && \
-    echo 'stdout_logfile_maxbytes=0' >> /etc/supervisord.conf && \
-    echo 'stderr_logfile=/dev/stderr' >> /etc/supervisord.conf && \
-    echo 'stderr_logfile_maxbytes=0' >> /etc/supervisord.conf && \
-    echo '' >> /etc/supervisord.conf && \
-    echo '[program:nginx]' >> /etc/supervisord.conf && \
-    echo 'command=nginx -g "daemon off;"' >> /etc/supervisord.conf && \
-    echo 'autostart=true' >> /etc/supervisord.conf && \
-    echo 'autorestart=true' >> /etc/supervisord.conf && \
-    echo 'stdout_logfile=/dev/stdout' >> /etc/supervisord.conf && \
-    echo 'stdout_logfile_maxbytes=0' >> /etc/supervisord.conf && \
-    echo 'stderr_logfile=/dev/stderr' >> /etc/supervisord.conf && \
-    echo 'stderr_logfile_maxbytes=0' >> /etc/supervisord.conf
+events {
+    worker_connections 1024;
+}
 
-# Verify frontend files exist
-RUN ls -la /usr/share/nginx/html/
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    keepalive_timeout 65;
+
+    server {
+        listen 80;
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+
+        # Frontend routes
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        # API proxy to Spring Boot
+        location /api/ {
+            proxy_pass http://localhost:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+        }
+    }
+}
+EOF
+
+# Create supervisord configuration
+RUN cat > /etc/supervisord.conf << 'EOF'
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:backend]
+command=java -jar /app/backend.jar --server.port=8080
+directory=/
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+priority=10
+
+[program:nginx]
+command=/usr/sbin/nginx -g "daemon off;"
+directory=/
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+priority=20
+depends_on=backend
+EOF
+
+# Test nginx configuration
+RUN nginx -t
+
+# Create a startup check script
+RUN cat > /health-check.sh << 'EOF'
+#!/bin/bash
+# Wait for backend to be ready
+echo "Waiting for backend to start..."
+for i in {1..30}; do
+    if curl -f http://localhost:8080/api/health 2>/dev/null || curl -f http://localhost:8080/ 2>/dev/null; then
+        echo "Backend is ready!"
+        break
+    fi
+    echo "Waiting for backend... ($i/30)"
+    sleep 2
+done
+
+# Check if nginx is running
+if pgrep nginx > /dev/null; then
+    echo "Nginx is running"
+else
+    echo "Nginx is not running!"
+fi
+EOF
+RUN chmod +x /health-check.sh
+
+# Verify setup
+RUN echo "=== Verifying frontend files ===" && \
+    ls -la /usr/share/nginx/html/ && \
+    echo "=== Verifying nginx config ===" && \
+    nginx -t
 
 EXPOSE 80
 
+# Use exec form to ensure proper signal handling
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
