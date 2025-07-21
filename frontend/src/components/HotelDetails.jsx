@@ -69,7 +69,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const fetchHotelData = async () => {
         try {
-            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
+           // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
+
+            const response = await fetch(`/api/hotels/${hotelId}`);
             const data = await response.json();
             setHotel(data);
         } catch (error) {
@@ -79,7 +81,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const fetchImages = async () => {
         try {
-            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
+            //const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
+
+            const response = await fetch(`/api/hotels/${hotelId}/images/urls`);
             const imageUrls = await response.json();
             setImages(imageUrls);
         } catch (error) {
@@ -93,9 +97,11 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             const checkin = format(dateRange[0].startDate, 'yyyy-MM-dd');
             const checkout = format(dateRange[0].endDate, 'yyyy-MM-dd');
             const totalGuests = guests.adults + guests.children;
-
+            //const response = await fetch(
+              //  `http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
+           // );
             const response = await fetch(
-                `http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
+                `/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
             );
 
             if (!response.ok) {
@@ -114,7 +120,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const fetchAvailability = async () => {
         try {
-            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates`);
+            //const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates`);
+
+            const response = await fetch(`/api/hotels/${hotelId}/availability/checkin-dates`);
             const dates = await response.json();
             setAvailableCheckinDates(dates.map(date => new Date(date)));
 
@@ -133,8 +141,11 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     const fetchCheckoutDates = async (checkinDate) => {
         try {
             const checkin = format(checkinDate, 'yyyy-MM-dd');
+           // const response = await fetch(
+               // `http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`
+           // );
             const response = await fetch(
-                `http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`
+                `/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`
             );
 
             if (!response.ok) {
@@ -256,7 +267,24 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             setDateRange([item.selection]);
         }
     };
+    const handleReservation = () => {
+        // Format dates for URL (DD/MM/YYYY format for European sites)
+        const checkinFormatted = format(dateRange[0].startDate, 'dd/MM/yyyy');  // ← Changed this
+        const checkoutFormatted = format(dateRange[0].endDate, 'dd/MM/yyyy');   // ← Changed this
 
+        // Calculate total guests (excluding pets for booking)
+        const totalGuests = guests.adults + guests.children + guests.babies;
+
+        // Encode dates for URL
+        const checkinEncoded = encodeURIComponent(checkinFormatted);
+        const checkoutEncoded = encodeURIComponent(checkoutFormatted);
+
+        // Build dynamic URL
+        const belvilla_url = `https://nl.belvilla.be/be/${hotelId}/?checkin=${checkinEncoded}&checkout=${checkoutEncoded}&flexibleDaysCount=3&guests=${totalGuests}&rooms=1&rooms_config=1-${totalGuests}&selected_rcid=1`;
+
+        // Redirect to Belvilla
+        window.open(belvilla_url, '_blank');
+    };
 
 
     if (loading) {
@@ -1899,20 +1927,21 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                     const isPriceAvailable = !!pricing?.price && calculateNights() > 0;
 
                                     return isPriceAvailable ? (
-                                        // 1 Price is available
+                                        // Price is available
                                         <button
+                                            onClick={handleReservation}  // ← Add this onClick
                                             className="w-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600
-                                             text-white font-semibold py-3 rounded-lg transition-all transform hover:scale-[1.02] shadow-lg"
+                     text-white font-semibold py-3 rounded-lg transition-all transform hover:scale-[1.02] shadow-lg"
                                         >
                                             Reservieren
                                         </button>
                                     ) : (
-                                        // 2️ Price unavailable: show a disabled button + info text
+                                        // Price unavailable
                                         <>
                                             <button
                                                 disabled
                                                 className="w-full bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold
-                                                py-3 rounded-lg opacity-50 cursor-not-allowed transition-all transform"
+                        py-3 rounded-lg opacity-50 cursor-not-allowed transition-all transform"
                                             >
                                                 Reservieren
                                             </button>
