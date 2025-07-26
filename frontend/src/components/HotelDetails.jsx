@@ -69,9 +69,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const fetchHotelData = async () => {
         try {
-           // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
+            // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
 
-            const response = await fetch(`/api/hotels/${hotelId}`);
+             const response = await fetch(`/api/hotels/${hotelId}`);
             const data = await response.json();
             setHotel(data);
         } catch (error) {
@@ -81,9 +81,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const fetchImages = async () => {
         try {
-            //const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
+            //   const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
 
-            const response = await fetch(`/api/hotels/${hotelId}/images/urls`);
+             const response = await fetch(`/api/hotels/${hotelId}/images/urls`);
             const imageUrls = await response.json();
             setImages(imageUrls);
         } catch (error) {
@@ -97,12 +97,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             const checkin = format(dateRange[0].startDate, 'yyyy-MM-dd');
             const checkout = format(dateRange[0].endDate, 'yyyy-MM-dd');
             const totalGuests = guests.adults + guests.children;
-            //const response = await fetch(
-              //  `http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
-           // );
-            const response = await fetch(
-                `/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
-            );
+           // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`);
+                const response = await fetch(
+                  `/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
+                 );
 
             if (!response.ok) {
                 console.log('Pricing not available for these dates');
@@ -120,9 +118,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const fetchAvailability = async () => {
         try {
-            //const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates`);
+            //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates`);
 
-            const response = await fetch(`/api/hotels/${hotelId}/availability/checkin-dates`);
+             const response = await fetch(`/api/hotels/${hotelId}/availability/checkin-dates`);
             const dates = await response.json();
             setAvailableCheckinDates(dates.map(date => new Date(date)));
 
@@ -141,12 +139,8 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     const fetchCheckoutDates = async (checkinDate) => {
         try {
             const checkin = format(checkinDate, 'yyyy-MM-dd');
-           // const response = await fetch(
-               // `http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`
-           // );
-            const response = await fetch(
-                `/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`
-            );
+            // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
+              const response = await fetch(`/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
 
             if (!response.ok) {
                 console.log('No checkout dates available for this check-in');
@@ -206,35 +200,81 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     };
 
     const isDateUnavailable = (date) => {
-        // If we haven't selected a check-in yet, only available check-in dates are selectable
+        // Past dates are always unavailable
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (date < today) {
+            return true;
+        }
+
+        // If we haven't selected a check-in yet
         if (!selectedCheckin) {
+            // Only available check-in dates are selectable
             const isAvailableCheckin = availableCheckinDates.some(availableDate =>
                 isSameDay(availableDate, date)
             );
-            return !isAvailableCheckin || date < new Date();
+            return !isAvailableCheckin;
         } else {
-            // If we have selected a check-in, only available checkout dates are selectable
+            // If we have selected a check-in
+            // The check-in date itself should remain available (for deselection)
+            if (isSameDay(date, selectedCheckin)) {
+                return false;
+            }
+
+            // For checkout dates, check if it's in the available checkout dates
             const isAvailableCheckout = availableCheckoutDates.some(availableDate =>
                 isSameDay(availableDate, date)
             );
-            return !isAvailableCheckout || date <= selectedCheckin;
+
+            // Dates before check-in are unavailable
+            if (date <= selectedCheckin) {
+                return true;
+            }
+
+            // Return true if it's NOT an available checkout date
+            return !isAvailableCheckout;
         }
+    };
+
+    const getDisabledDates = () => {
+        const disabledDates = [];
+        const startDate = new Date();
+        const endDate = addDays(startDate, 365); // Check next 365 days
+
+        for (let d = startDate; d <= endDate; d = addDays(d, 1)) {
+            if (isDateUnavailable(d)) {
+                disabledDates.push(d);
+            }
+        }
+
+        return disabledDates;
     };
 
 
     const customDayContent = (day) => {
         const isUnavailable = isDateUnavailable(day);
         const isCheckinDate = selectedCheckin && isSameDay(day, selectedCheckin);
+        const isCheckoutDate = dateRange[0].endDate && isSameDay(day, dateRange[0].endDate);
+        const isToday = isSameDay(day, new Date());
+
+        // Check if day is in range (between check-in and check-out)
+        const isInRange = selectedCheckin && dateRange[0].endDate &&
+            day > selectedCheckin && day < dateRange[0].endDate;
 
         return (
-            <div className={`relative ${isUnavailable ? 'text-gray-300' : ''}`}>
-                <span>{format(day, 'd')}</span>
-                {isUnavailable && (
-                    <div className="absolute inset-0 bg-gray-100 opacity-50 rounded pointer-events-none"></div>
-                )}
-                {isCheckinDate && (
-                    <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-black rounded-full"></div>
-                )}
+            <div className={`
+            relative w-full h-full flex items-center justify-center
+            ${isUnavailable ? 'unavailable-day' : ''}
+            ${isInRange ? 'in-range-day' : ''}
+            ${isCheckinDate || isCheckoutDate ? 'selected-day' : ''}
+        `}>
+            <span className={`
+                ${isUnavailable ? 'text-gray-400' : 'text-gray-900'}
+                ${isToday ? 'font-bold' : ''}
+                ${(isCheckinDate || isCheckoutDate) ? 'text-white font-bold' : ''}
+            `}>
+                {format(day, 'd')}
+            </span>
             </div>
         );
     };
@@ -243,28 +283,32 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         const newStartDate = item.selection.startDate;
         const newEndDate = item.selection.endDate;
 
-        // If user selected a new check-in date
-        if (!selectedCheckin || !isSameDay(newStartDate, selectedCheckin)) {
+        // If selecting a check-in date (no check-in selected yet or selecting a new one)
+        if (!selectedCheckin || newStartDate.getTime() !== selectedCheckin.getTime()) {
             // Fetch valid checkout dates for this check-in
             await fetchCheckoutDates(newStartDate);
+            setSelectedCheckin(newStartDate);
 
-            // Reset end date if it's not valid for new check-in
-            const validCheckout = availableCheckoutDates.find(date =>
+            // Set just the start date initially
+            setDateRange([{
+                startDate: newStartDate,
+                endDate: newStartDate,
+                key: 'selection'
+            }]);
+        } else {
+            // We're selecting a checkout date
+            // Check if this specific checkout date is available
+            const isValidCheckout = availableCheckoutDates.some(date =>
                 isSameDay(date, newEndDate)
             );
 
-            if (!validCheckout && availableCheckoutDates.length > 0) {
-                // Select the first available checkout date
+            if (isValidCheckout && newEndDate > selectedCheckin) {
                 setDateRange([{
-                    startDate: newStartDate,
-                    endDate: availableCheckoutDates[0],
+                    startDate: selectedCheckin,
+                    endDate: newEndDate,
                     key: 'selection'
                 }]);
-            } else {
-                setDateRange([item.selection]);
             }
-        } else {
-            setDateRange([item.selection]);
         }
     };
     const handleReservation = () => {
@@ -640,9 +684,13 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                 {/* Price Header */}
                                 <div className="flex items-baseline gap-2 mb-6">
                                     <span className="text-2xl font-semibold">
-                                        €{pricing?.price?.replace('€', '') || '0.00'}
+                                        {pricing?.price
+                                            ? `€${pricing.price.replace('€', '')}`
+                                            : 'Verfügbaren Zeitraum wählen'}
                                     </span>
-                                    <span className="text-gray-600">exkl. Zusatzleistungen </span>
+                                    {pricing?.price && (
+                                        <span className="text-gray-600">exkl. Zusatzleistungen</span>
+                                    )}
                                     {pricing?.slasherPrice && (
                                         <span className="text-gray-400 line-through text-lg ml-2">
                                             €{pricing.slasherPrice.replace('€', '')}
@@ -738,15 +786,17 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                             onChange={handleDateChange}
                                                             showSelectionPreview={true}
                                                             moveRangeOnFirstSelection={false}
-                                                            months={2}
+                                                            months={1}
                                                             direction="horizontal"
-                                                            rangeColors={['#000000']}
+                                                            rangeColors={['#ec4899']}
                                                             minDate={new Date()}
-                                                            disabledDates={[]}
+                                                            disabledDay={(date) => isDateUnavailable(date)} // Use function instead of array
                                                             dayContentRenderer={customDayContent}
                                                             monthDisplayFormat="MMMM yyyy"
                                                             staticRanges={[]}
                                                             inputRanges={[]}
+                                                            preventSnapRefocus={true}
+                                                            calendarFocus="forwards"
                                                         />
                                                     </div>
                                                 </div>
@@ -784,574 +834,573 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                         {/* Updated Styles */}
                                         <style dangerouslySetInnerHTML={{
                                             __html: `
-        
+                                                   /* MODAL FOUNDATION */
+.modal-portal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 99999 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
 
-                                                    /* MODAL FOUNDATION */
-                                                    .modal-portal {
-                                                        position: fixed !important;
-                                                        top: 0 !important;
-                                                        left: 0 !important;
-                                                        right: 0 !important;
-                                                        bottom: 0 !important;
-                                                        z-index: 99999 !important;
-                                                        display: flex !important;
-                                                        align-items: center !important;
-                                                        justify-content: center !important;
-                                                    }
-                                            
-                                                    .modal-overlay {
-                                                        position: fixed !important;
-                                                        top: 0 !important;
-                                                        left: 0 !important;
-                                                        right: 0 !important;
-                                                        bottom: 0 !important;
-                                                        background: linear-gradient(135deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6)) !important;
-                                                        z-index: 99998 !important;
-                                                        backdrop-filter: blur(8px) !important;
-                                                        -webkit-backdrop-filter: blur(8px) !important;
-                                                        animation: fadeIn 0.3s ease-out !important;
-                                                    }
-                                            
-                                                    @keyframes fadeIn {
-                                                        from { opacity: 0; }
-                                                        to { opacity: 1; }
-                                                    }
-                                            
-                                                    @keyframes slideUp {
-                                                        from { 
-                                                            opacity: 0; 
-                                                            transform: translate(-50%, -45%) scale(0.95);
-                                                        }
-                                                        to { 
-                                                            opacity: 1; 
-                                                            transform: translate(-50%, -50%) scale(1);
-                                                        }
-                                                    }
-                                            
-                                                    .modal-container {
-                                                        position: fixed !important;
-                                                        top: 50% !important;
-                                                        left: calc(50% + 1cm) !important;
-                                                        transform: translate(-50%, -50%) !important;
-                                                        width: auto !important;
-                                                        max-width: calc(100vw - 2rem - 1cm) !important;
-                                                        z-index: 99999 !important;
-                                                        animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-                                                    }
-                                            
-                                                    .modal-content {
-                                                        background: linear-gradient(135deg, #ffffff, #fafafa) !important;
-                                                        border-radius: 20px !important;
-                                                        box-shadow: 
-                                                            0 25px 50px -12px rgba(0, 0, 0, 0.25),
-                                                            0 0 0 1px rgba(255, 255, 255, 0.8),
-                                                            inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
-                                                        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                                                        padding: 0 !important;
-                                                        padding-top: 5rem !important;
-                                                        max-width: fit-content !important;
-                                                        width: fit-content !important;
-                                                        max-height: 85vh !important;
-                                                        overflow-y: auto !important;
-                                                        position: relative !important;
-                                                        -webkit-overflow-scrolling: touch !important;
-                                                    }
-                                            
-                                                    /* CLOSE BUTTON */
-                                                    .modal-close-btn {
-                                                        position: absolute !important;
-                                                        top: 1.5rem !important;
-                                                        right: 1.5rem !important;
-                                                        z-index: 10 !important;
-                                                        padding: 0.75rem !important;
-                                                        background: rgba(255, 255, 255, 0.9) !important;
-                                                        border: 1px solid rgba(0, 0, 0, 0.1) !important;
-                                                        border-radius: 50% !important;
-                                                        cursor: pointer !important;
-                                                        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-                                                        backdrop-filter: blur(10px) !important;
-                                                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-                                                    }
-                                                    
-                                                    .modal-close-btn:hover {
-                                                        background: rgba(248, 250, 252, 0.95) !important;
-                                                        border-color: rgba(0, 0, 0, 0.2) !important;
-                                                        transform: scale(1.1) rotate(90deg) !important;
-                                                        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
-                                                    }
-                                            
-                                                    /* MODAL HEADER */
-                                                    .modal-header {
-                                                        display: flex !important;
-                                                        align-items: center !important;
-                                                        justify-content: space-between !important;
-                                                        margin-bottom: 1.5rem !important;
-                                                        padding: 0 2rem 1.5rem 2rem !important;
-                                                        border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
-                                                        background: linear-gradient(90deg, rgba(236, 72, 153, 0.05), rgba(190, 24, 93, 0.05)) !important;
-                                                    }
-                                            
-                                                    .modal-header div {
-                                                        font-weight: 600 !important;
-                                                        color: #374151 !important;
-                                                        font-size: 0.95rem !important;
-                                                    }
-                                            
-                                                    /* INSTRUCTIONS */
-                                                    .modal-instruction {
-                                                        margin: 0 2rem 1.5rem 2rem !important;
-                                                        padding: 1rem 1.25rem !important;
-                                                        border-radius: 12px !important;
-                                                        font-size: 0.9rem !important;
-                                                        text-align: center !important;
-                                                        font-weight: 500 !important;
-                                                        position: relative !important;
-                                                        overflow: hidden !important;
-                                                    }
-                                            
-                                                    .modal-instruction::before {
-                                                        content: '' !important;
-                                                        position: absolute !important;
-                                                        top: 0 !important;
-                                                        left: -100% !important;
-                                                        width: 100% !important;
-                                                        height: 100% !important;
-                                                        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent) !important;
-                                                        animation: shimmer 2s infinite !important;
-                                                    }
-                                            
-                                                    @keyframes shimmer {
-                                                        0% { left: -100%; }
-                                                        100% { left: 100%; }
-                                                    }
-                                            
-                                                    .modal-instruction-blue {
-                                                        background: linear-gradient(135deg, #eff6ff, #dbeafe) !important;
-                                                        color: #1e40af !important;
-                                                        border: 1px solid #93c5fd !important;
-                                                        box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1) !important;
-                                                    }
-                                            
-                                                    .modal-instruction-green {
-                                                        background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
-                                                        color: #166534 !important;
-                                                        border: 1px solid #86efac !important;
-                                                        box-shadow: 0 4px 6px -1px rgba(34, 197, 94, 0.1) !important;
-                                                    }
-                                            
-                                                    /* CALENDAR WRAPPER */
-                                                    .calendar-wrapper {
-                                                        width: fit-content !important;
-                                                        display: flex !important;
-                                                        justify-content: center !important;
-                                                        margin: 0 !important;
-                                                        padding: 0 1rem !important;
-                                                    }
-                                            
-                                                    /* MODAL FOOTER */
-                                                    .modal-footer {
-                                                        display: flex !important;
-                                                        align-items: center !important;
-                                                        justify-content: space-between !important;
-                                                        padding: 1.5rem 2rem !important;
-                                                        border-top: 1px solid rgba(0, 0, 0, 0.08) !important;
-                                                        margin-top: 1.5rem !important;
-                                                        background: linear-gradient(90deg, rgba(249, 250, 251, 0.8), rgba(243, 244, 246, 0.8)) !important;
-                                                    }
-                                            
-                                                    .reset-btn {
-                                                        font-size: 0.9rem !important;
-                                                        color: #6b7280 !important;
-                                                        text-decoration: underline !important;
-                                                        background: none !important;
-                                                        border: none !important;
-                                                        cursor: pointer !important;
-                                                        transition: all 0.3s ease !important;
-                                                        padding: 0.75rem 1rem !important;
-                                                        border-radius: 8px !important;
-                                                        font-weight: 500 !important;
-                                                    }
-                                            
-                                                    .reset-btn:hover {
-                                                        color: #374151 !important;
-                                                        background: rgba(0, 0, 0, 0.05) !important;
-                                                        text-decoration: none !important;
-                                                        transform: translateY(-1px) !important;
-                                                    }
-                                            
-                                                    .close-btn {
-                                                        background: linear-gradient(135deg, #1f2937, #374151) !important;
-                                                        color: white !important;
-                                                        padding: 0.875rem 2rem !important;
-                                                        border-radius: 12px !important;
-                                                        font-size: 0.9rem !important;
-                                                        font-weight: 600 !important;
-                                                        border: none !important;
-                                                        cursor: pointer !important;
-                                                        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-                                                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
-                                                        position: relative !important;
-                                                        overflow: hidden !important;
-                                                    }
-                                            
-                                                    .close-btn::before {
-                                                        content: '' !important;
-                                                        position: absolute !important;
-                                                        top: 0 !important;
-                                                        left: -100% !important;
-                                                        width: 100% !important;
-                                                        height: 100% !important;
-                                                        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent) !important;
-                                                        transition: left 0.5s ease !important;
-                                                    }
-                                            
-                                                    .close-btn:hover::before {
-                                                        left: 100% !important;
-                                                    }
-                                            
-                                                    .close-btn:hover {
-                                                        background: linear-gradient(135deg, #374151, #4b5563) !important;
-                                                        transform: translateY(-2px) !important;
-                                                        box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.2) !important;
-                                                    }
-                                            
-                                                    /* ==============================================
-                                                       PREMIUM CALENDAR STYLES
-                                                       ============================================== */
-                                            
-                                                    .airbnb-calendar-container {
-                                                        position: relative !important;
-                                                        z-index: 1 !important;
-                                                        background: linear-gradient(135deg, #ffffff, #fafafa) !important;
-                                                        border-radius: 16px !important;
-                                                        width: fit-content !important;
-                                                        margin: 0 !important;
-                                                        padding: 1.5rem !important;
-                                                        box-shadow: 
-                                                            0 10px 25px -5px rgba(0, 0, 0, 0.1),
-                                                            0 0 0 1px rgba(0, 0, 0, 0.05) !important;
-                                                        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container > div {
-                                                        margin: 0 !important;
-                                                        padding: 0 !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrCalendarWrapper {
-                                                        border: none !important;
-                                                        background: transparent !important;
-                                                        font-family: inherit !important;
-                                                        position: relative !important;
-                                                        z-index: 1 !important;
-                                                        margin: 0 !important;
-                                                        padding: 0 !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDateRangeWrapper,
-                                                    .airbnb-calendar-container .rdrDateRangePickerWrapper {
-                                                        border: none !important;
-                                                        margin: 0 !important;
-                                                        padding: 0 !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDefinedRangesWrapper,
-                                                    .airbnb-calendar-container .rdrDateDisplayWrapper {
-                                                        display: none !important;
-                                                    }
-                                            
-                                                    /* MONTHS CONTAINER */
-                                                    .airbnb-calendar-container .rdrMonths {
-                                                        margin: 0 !important;
-                                                        padding: 0 !important;
-                                                        display: flex !important;
-                                                        gap: 2rem !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrMonth {
-                                                        padding: 0 !important;
-                                                        margin: 0 !important;
-                                                        background: rgba(255, 255, 255, 0.7) !important;
-                                                        border-radius: 12px !important;
-                                                        padding: 1rem !important;
-                                                        border: 1px solid rgba(0, 0, 0, 0.05) !important;
-                                                        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-                                                        backdrop-filter: blur(10px) !important;
-                                                    }
-                                            
-                                                    /* MONTH HEADER */
-                                                    .airbnb-calendar-container .rdrMonthAndYearWrapper {
-                                                        height: 4rem !important;
-                                                        padding: 0 1rem !important;
-                                                        margin-bottom: 1rem !important;
-                                                        display: flex !important;
-                                                        align-items: center !important;
-                                                        justify-content: space-between !important;
-                                                        background: linear-gradient(135deg, #ffffff, #f8fafc) !important;
-                                                        border-radius: 10px !important;
-                                                        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-                                                        border: 1px solid rgba(0, 0, 0, 0.08) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrMonthAndYearPickers {
-                                                        font-weight: 700 !important;
-                                                        font-size: 1.125rem !important;
-                                                        color: #1f2937 !important;
-                                                        letter-spacing: -0.025em !important;
-                                                    }
-                                            
-                                                    /* NAVIGATION BUTTONS */
-                                                    .airbnb-calendar-container .rdrNextPrevButton {
-                                                        background: linear-gradient(135deg, #ffffff, #f8fafc) !important;
-                                                        border: 2px solid #e5e7eb !important;
-                                                        border-radius: 50% !important;
-                                                        width: 2.5rem !important;
-                                                        height: 2.5rem !important;
-                                                        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-                                                        display: flex !important;
-                                                        align-items: center !important;
-                                                        justify-content: center !important;
-                                                        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-                                                        position: relative !important;
-                                                        overflow: hidden !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrNextPrevButton::before {
-                                                        content: '' !important;
-                                                        position: absolute !important;
-                                                        top: 50% !important;
-                                                        left: 50% !important;
-                                                        width: 0 !important;
-                                                        height: 0 !important;
-                                                        background: rgba(236, 72, 153, 0.1) !important;
-                                                        border-radius: 50% !important;
-                                                        transition: all 0.3s ease !important;
-                                                        transform: translate(-50%, -50%) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrNextPrevButton:hover::before {
-                                                        width: 100% !important;
-                                                        height: 100% !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrNextPrevButton:hover {
-                                                        background: linear-gradient(135deg, #fdf2f8, #fce7f3) !important;
-                                                        border-color: #ec4899 !important;
-                                                        transform: scale(1.1) !important;
-                                                        box-shadow: 0 4px 12px rgba(236, 72, 153, 0.25) !important;
-                                                    }
-                                            
-                                                    /* WEEK DAYS */
-                                                    .airbnb-calendar-container .rdrWeekDays {
-                                                        padding: 0.5rem 0 !important;
-                                                        margin-bottom: 0.5rem !important;
-                                                        background: rgba(255, 255, 255, 0.6) !important;
-                                                        border-radius: 8px !important;
-                                                        border: 1px solid rgba(0, 0, 0, 0.05) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrWeekDay {
-                                                        color: #6b7280 !important;
-                                                        font-weight: 600 !important;
-                                                        font-size: 0.75rem !important;
-                                                        text-transform: uppercase !important;
-                                                        letter-spacing: 0.05em !important;
-                                                        height: 2rem !important;
-                                                        display: flex !important;
-                                                        align-items: center !important;
-                                                        justify-content: center !important;
-                                                    }
-                                            
-                                                    /* DAY CELLS - PREMIUM INTERACTIONS */
-                                                    .airbnb-calendar-container .rdrDay {
-                                                        height: 2.75rem !important;
-                                                        width: 2.75rem !important;
-                                                        line-height: 2.75rem !important;
-                                                        margin: 0.125rem !important;
-                                                        border-radius: 10px !important;
-                                                        position: relative !important;
-                                                        cursor: pointer !important;
-                                                        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-                                                        border: 2px solid transparent !important;
-                                                        background: rgba(255, 255, 255, 0.8) !important;
-                                                        backdrop-filter: blur(5px) !important;
-                                                        overflow: hidden !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDay::before {
-                                                        content: '' !important;
-                                                        position: absolute !important;
-                                                        top: 50% !important;
-                                                        left: 50% !important;
-                                                        width: 0 !important;
-                                                        height: 0 !important;
-                                                        background: rgba(236, 72, 153, 0.1) !important;
-                                                        border-radius: 50% !important;
-                                                        transition: all 0.3s ease !important;
-                                                        transform: translate(-50%, -50%) !important;
-                                                        z-index: 0 !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDay:hover::before {
-                                                        width: 120% !important;
-                                                        height: 120% !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDay:hover {
-                                                        background: rgba(255, 255, 255, 0.95) !important;
-                                                        transform: scale(1.05) translateY(-1px) !important;
-                                                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-                                                        border-color: rgba(236, 72, 153, 0.3) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDay:active {
-                                                        transform: scale(0.95) !important;
-                                                        transition: transform 0.1s ease !important;
-                                                    }
-                                            
-                                                    /* DAY NUMBERS */
-                                                    .airbnb-calendar-container .rdrDayNumber {
-                                                        font-weight: 500 !important;
-                                                        color: #374151 !important;
-                                                        font-size: 0.875rem !important;
-                                                        display: flex !important;
-                                                        align-items: center !important;
-                                                        justify-content: center !important;
-                                                        width: 100% !important;
-                                                        height: 100% !important;
-                                                        border-radius: 8px !important;
-                                                        transition: all 0.2s ease !important;
-                                                        position: relative !important;
-                                                        z-index: 1 !important;
-                                                    }
-                                            
-                                                    /* TODAY'S DATE */
-                                                    .airbnb-calendar-container .rdrDayToday {
-                                                        background: linear-gradient(135deg, #fef3c7, #fde68a) !important;
-                                                        border: 2px solid #f59e0b !important;
-                                                        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayToday .rdrDayNumber {
-                                                        font-weight: 700 !important;
-                                                        color: #92400e !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayToday .rdrDayNumber:after {
-                                                        display: none !important;
-                                                    }
-                                            
-                                                    /* SELECTED DAYS */
-                                                    .airbnb-calendar-container .rdrDayActive,
-                                                    .airbnb-calendar-container .rdrDayStartEdge,
-                                                    .airbnb-calendar-container .rdrDayEndEdge {
-                                                        background: linear-gradient(135deg, #ec4899, #be185d) !important;
-                                                        color: white !important;
-                                                        border: 2px solid #be185d !important;
-                                                        box-shadow: 
-                                                            0 4px 15px rgba(236, 72, 153, 0.4),
-                                                            0 0 0 3px rgba(236, 72, 153, 0.2) !important;
-                                                        transform: scale(1.05) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayActive .rdrDayNumber,
-                                                    .airbnb-calendar-container .rdrDayStartEdge .rdrDayNumber,
-                                                    .airbnb-calendar-container .rdrDayEndEdge .rdrDayNumber {
-                                                        color: white !important;
-                                                        font-weight: 700 !important;
-                                                        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
-                                                    }
-                                            
-                                                    /* RANGE DAYS */
-                                                    .airbnb-calendar-container .rdrDayInRange {
-                                                        background: linear-gradient(135deg, #fce7f3, #fbcfe8) !important;
-                                                        color: #be185d !important;
-                                                        border: 1px solid #f9a8d4 !important;
-                                                        box-shadow: inset 0 1px 3px rgba(236, 72, 153, 0.1) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayInRange .rdrDayNumber {
-                                                        color: #be185d !important;
-                                                        font-weight: 600 !important;
-                                                    }
-                                            
-                                                    /* HOVERED DAYS */
-                                                    .airbnb-calendar-container .rdrDayHovered {
-                                                        background: linear-gradient(135deg, #f3f4f6, #e5e7eb) !important;
-                                                        border: 2px solid #9ca3af !important;
-                                                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
-                                                    }
-                                            
-                                                    /* DISABLED DAYS */
-                                                    .airbnb-calendar-container .rdrDayDisabled {
-                                                        color: #d1d5db !important;
-                                                        cursor: not-allowed !important;
-                                                        position: relative !important;
-                                                        background: linear-gradient(135deg, #f9fafb, #f3f4f6) !important;
-                                                        border: 1px solid #e5e7eb !important;
-                                                        opacity: 0.6 !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayDisabled:hover {
-                                                        transform: none !important;
-                                                        box-shadow: none !important;
-                                                        background: linear-gradient(135deg, #f9fafb, #f3f4f6) !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayDisabled::before {
-                                                        display: none !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayDisabled .rdrDayNumber:after {
-                                                        display: none !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayDisabled::after {
-                                                        content: '' !important;
-                                                        position: absolute !important;
-                                                        top: 50% !important;
-                                                        left: 50% !important;
-                                                        width: 1.5rem !important;
-                                                        height: 0.125rem !important;
-                                                        background: #ef4444 !important;
-                                                        transform: translate(-50%, -50%) rotate(45deg) !important;
-                                                        pointer-events: none !important;
-                                                        z-index: 2 !important;
-                                                        border-radius: 1px !important;
-                                                    }
-                                            
-                                                    .airbnb-calendar-container .rdrDayDisabled.rdrDayActive,
-                                                    .airbnb-calendar-container .rdrDayDisabled.rdrDayStartEdge,
-                                                    .airbnb-calendar-container .rdrDayDisabled.rdrDayEndEdge,
-                                                    .airbnb-calendar-container .rdrDayDisabled.rdrDayInRange {
-                                                        background: linear-gradient(135deg, #f9fafb, #f3f4f6) !important;
-                                                        color: #d1d5db !important;
-                                                        border: 1px solid #e5e7eb !important;
-                                                        box-shadow: none !important;
-                                                        transform: none !important;
-                                                    }
-                                            
-                                                    /* MONTH NAME */
-                                                    .airbnb-calendar-container .rdrMonthName {
-                                                        font-weight: 700 !important;
-                                                        font-size: 1.125rem !important;
-                                                        color: #1f2937 !important;
-                                                        letter-spacing: -0.025em !important;
-                                                    }
-                                            
-                                                    /* FOCUS STATES */
-                                                    .airbnb-calendar-container .rdrDay:focus {
-                                                        outline: none !important;
-                                                        border: 2px solid #3b82f6 !important;
-                                                        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
-                                                    }
-                                            
-                                                    /* ==============================================
-                                                       RESPONSIVE DESIGN
-                                                       ============================================== */
-                                            
-                                                    /* MOBILE FIXES - Replace your mobile media queries with these improved versions */
+.modal-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6)) !important;
+    z-index: 99998 !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    animation: fadeIn 0.3s ease-out !important;
+}
 
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { 
+        opacity: 0; 
+        transform: translate(-50%, -45%) scale(0.95);
+    }
+    to { 
+        opacity: 1; 
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+/* FIXED: Centered modal container */
+.modal-container {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: auto !important;
+    max-width: calc(100vw - 2rem) !important;
+    z-index: 99999 !important;
+    animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.modal-content {
+    background: linear-gradient(135deg, #ffffff, #fafafa) !important;
+    border-radius: 20px !important;
+    box-shadow: 
+        0 25px 50px -12px rgba(0, 0, 0, 0.25),
+        0 0 0 1px rgba(255, 255, 255, 0.8),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    padding: 0 !important;
+    padding-top: 5rem !important;
+    max-width: fit-content !important;
+    width: fit-content !important;
+    max-height: 85vh !important;
+    overflow-y: auto !important;
+    position: relative !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* CLOSE BUTTON */
+.modal-close-btn {
+    position: absolute !important;
+    top: 1.5rem !important;
+    right: 1.5rem !important;
+    z-index: 10 !important;
+    padding: 0.75rem !important;
+    background: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    backdrop-filter: blur(10px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+.modal-close-btn:hover {
+    background: rgba(248, 250, 252, 0.95) !important;
+    border-color: rgba(0, 0, 0, 0.2) !important;
+    transform: scale(1.1) rotate(90deg) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* MODAL HEADER */
+.modal-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin-bottom: 1.5rem !important;
+    padding: 0 2rem 1.5rem 2rem !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+    background: linear-gradient(90deg, rgba(236, 72, 153, 0.05), rgba(190, 24, 93, 0.05)) !important;
+}
+
+.modal-header div {
+    font-weight: 600 !important;
+    color: #374151 !important;
+    font-size: 0.95rem !important;
+}
+
+/* INSTRUCTIONS */
+.modal-instruction {
+    margin: 0 2rem 1.5rem 2rem !important;
+    padding: 1rem 1.25rem !important;
+    border-radius: 12px !important;
+    font-size: 0.9rem !important;
+    text-align: center !important;
+    font-weight: 500 !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.modal-instruction::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: -100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent) !important;
+    animation: shimmer 2s infinite !important;
+}
+
+@keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+.modal-instruction-blue {
+    background: linear-gradient(135deg, #eff6ff, #dbeafe) !important;
+    color: #1e40af !important;
+    border: 1px solid #93c5fd !important;
+    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1) !important;
+}
+
+.modal-instruction-green {
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
+    color: #166534 !important;
+    border: 1px solid #86efac !important;
+    box-shadow: 0 4px 6px -1px rgba(34, 197, 94, 0.1) !important;
+}
+
+/* CALENDAR WRAPPER */
+.calendar-wrapper {
+    width: fit-content !important;
+    display: flex !important;
+    justify-content: center !important;
+    margin: 0 auto !important;
+    padding: 0 1rem !important;
+}
+
+/* MODAL FOOTER */
+.modal-footer {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 1.5rem 2rem !important;
+    border-top: 1px solid rgba(0, 0, 0, 0.08) !important;
+    margin-top: 1.5rem !important;
+    background: linear-gradient(90deg, rgba(249, 250, 251, 0.8), rgba(243, 244, 246, 0.8)) !important;
+}
+
+.reset-btn {
+    font-size: 0.9rem !important;
+    color: #6b7280 !important;
+    text-decoration: underline !important;
+    background: none !important;
+    border: none !important;
+    cursor: pointer !important;
+    transition: all 0.3s ease !important;
+    padding: 0.75rem 1rem !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+
+.reset-btn:hover {
+    color: #374151 !important;
+    background: rgba(0, 0, 0, 0.05) !important;
+    text-decoration: none !important;
+    transform: translateY(-1px) !important;
+}
+
+.close-btn {
+    background: linear-gradient(135deg, #1f2937, #374151) !important;
+    color: white !important;
+    padding: 0.875rem 2rem !important;
+    border-radius: 12px !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    border: none !important;
+    cursor: pointer !important;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.close-btn::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: -100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent) !important;
+    transition: left 0.5s ease !important;
+}
+
+.close-btn:hover::before {
+    left: 100% !important;
+}
+
+.close-btn:hover {
+    background: linear-gradient(135deg, #374151, #4b5563) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* ==============================================
+   PREMIUM CALENDAR STYLES
+   ============================================== */
+
+.airbnb-calendar-container {
+    position: relative !important;
+    z-index: 1 !important;
+    background: linear-gradient(135deg, #ffffff, #fafafa) !important;
+    border-radius: 16px !important;
+    width: fit-content !important;
+    margin: 0 auto !important;
+    padding: 1.5rem !important;
+    box-shadow: 
+        0 10px 25px -5px rgba(0, 0, 0, 0.1),
+        0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.airbnb-calendar-container > div {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.airbnb-calendar-container .rdrCalendarWrapper {
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+.airbnb-calendar-container .rdrDateRangeWrapper,
+.airbnb-calendar-container .rdrDateRangePickerWrapper {
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.airbnb-calendar-container .rdrDefinedRangesWrapper,
+.airbnb-calendar-container .rdrDateDisplayWrapper {
+    display: none !important;
+}
+
+/* MONTHS CONTAINER */
+.airbnb-calendar-container .rdrMonths {
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    gap: 2rem !important;
+}
+
+.airbnb-calendar-container .rdrMonth {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: rgba(255, 255, 255, 0.7) !important;
+    border-radius: 12px !important;
+    padding: 1rem !important;
+    border: 1px solid rgba(0, 0, 0, 0.05) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+    backdrop-filter: blur(10px) !important;
+}
+
+/* MONTH HEADER */
+.airbnb-calendar-container .rdrMonthAndYearWrapper {
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+.airbnb-calendar-container .rdrMonthAndYearPickers {
+    font-weight: 700 !important;
+    font-size: 1.125rem !important;
+    color: #1f2937 !important;
+    letter-spacing: -0.025em !important;
+}
+
+/* NAVIGATION BUTTONS */
+.airbnb-calendar-container .rdrNextPrevButton {
+    background: linear-gradient(135deg, #ffffff, #f8fafc) !important;
+    border: 2px solid #e5e7eb !important;
+    border-radius: 50% !important;
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.airbnb-calendar-container .rdrNextPrevButton::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: rgba(236, 72, 153, 0.1) !important;
+    border-radius: 50% !important;
+    transition: all 0.3s ease !important;
+    transform: translate(-50%, -50%) !important;
+}
+
+.airbnb-calendar-container .rdrNextPrevButton:hover::before {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.airbnb-calendar-container .rdrNextPrevButton:hover {
+    background: linear-gradient(135deg, #fdf2f8, #fce7f3) !important;
+    border-color: #ec4899 !important;
+    transform: scale(1.1) !important;
+    box-shadow: 0 4px 12px rgba(236, 72, 153, 0.25) !important;
+}
+
+/* WEEK DAYS */
+.airbnb-calendar-container .rdrWeekDays {
+    padding: 0.5rem 0 !important;
+    margin-bottom: 0.5rem !important;
+    background: rgba(255, 255, 255, 0.6) !important;
+    border-radius: 8px !important;
+    border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.airbnb-calendar-container .rdrWeekDay {
+    color: #6b7280 !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    height: 2rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* DAY CELLS - PREMIUM INTERACTIONS */
+.airbnb-calendar-container .rdrDay {
+    height: 2.75rem !important;
+    width: 2.75rem !important;
+    line-height: 2.75rem !important;
+    margin: 0.125rem !important;
+    border-radius: 10px !important;
+    position: relative !important;
+    cursor: pointer !important;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    border: 2px solid transparent !important;
+    background: rgba(255, 255, 255, 0.8) !important;
+    backdrop-filter: blur(5px) !important;
+    overflow: hidden !important;
+}
+
+.airbnb-calendar-container .rdrDay::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: rgba(236, 72, 153, 0.1) !important;
+    border-radius: 50% !important;
+    transition: all 0.3s ease !important;
+    transform: translate(-50%, -50%) !important;
+    z-index: 0 !important;
+}
+
+.airbnb-calendar-container .rdrDay:hover::before {
+    width: 120% !important;
+    height: 120% !important;
+}
+
+.airbnb-calendar-container .rdrDay:hover {
+    background: rgba(255, 255, 255, 0.95) !important;
+    transform: scale(1.05) translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    border-color: rgba(236, 72, 153, 0.3) !important;
+}
+
+.airbnb-calendar-container .rdrDay:active {
+    transform: scale(0.95) !important;
+    transition: transform 0.1s ease !important;
+}
+
+/* DAY NUMBERS */
+.airbnb-calendar-container .rdrDayNumber {
+    font-weight: 500 !important;
+    color: #374151 !important;
+    font-size: 0.875rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+/* TODAY'S DATE */
+.airbnb-calendar-container .rdrDayToday {
+    background: linear-gradient(135deg, #fef3c7, #fde68a) !important;
+    border: 2px solid #f59e0b !important;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2) !important;
+}
+
+.airbnb-calendar-container .rdrDayToday .rdrDayNumber {
+    font-weight: 700 !important;
+    color: #92400e !important;
+}
+
+.airbnb-calendar-container .rdrDayToday .rdrDayNumber:after {
+    display: none !important;
+}
+
+/* SELECTED DAYS */
+.airbnb-calendar-container .rdrDayActive,
+.airbnb-calendar-container .rdrDayStartEdge,
+.airbnb-calendar-container .rdrDayEndEdge {
+    background: linear-gradient(135deg, #ec4899, #be185d) !important;
+    color: white !important;
+    border: 2px solid #be185d !important;
+    box-shadow: 
+        0 4px 15px rgba(236, 72, 153, 0.4),
+        0 0 0 3px rgba(236, 72, 153, 0.2) !important;
+    transform: scale(1.05) !important;
+}
+
+.airbnb-calendar-container .rdrDayActive .rdrDayNumber,
+.airbnb-calendar-container .rdrDayStartEdge .rdrDayNumber,
+.airbnb-calendar-container .rdrDayEndEdge .rdrDayNumber {
+    color: white !important;
+    font-weight: 700 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* RANGE DAYS */
+.airbnb-calendar-container .rdrDayInRange {
+    background: linear-gradient(135deg, #fce7f3, #fbcfe8) !important;
+    color: #be185d !important;
+    border: 1px solid #f9a8d4 !important;
+    box-shadow: inset 0 1px 3px rgba(236, 72, 153, 0.1) !important;
+}
+
+.airbnb-calendar-container .rdrDayInRange .rdrDayNumber {
+    color: #be185d !important;
+    font-weight: 600 !important;
+}
+
+/* HOVERED DAYS */
+.airbnb-calendar-container .rdrDayHovered {
+    background: linear-gradient(135deg, #f3f4f6, #e5e7eb) !important;
+    border: 2px solid #9ca3af !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* FIXED: DISABLED DAYS - Now truly unclickable */
+.airbnb-calendar-container .rdrDayDisabled {
+    color: #d1d5db !important;
+    cursor: not-allowed !important;
+    position: relative !important;
+    background: linear-gradient(135deg, #f9fafb, #f3f4f6) !important;
+    border: 1px solid #e5e7eb !important;
+    opacity: 0.6 !important;
+    pointer-events: none !important; /* Makes it unclickable */
+}
+
+.airbnb-calendar-container .rdrDayDisabled:hover {
+    transform: none !important;
+    box-shadow: none !important;
+    background: linear-gradient(135deg, #f9fafb, #f3f4f6) !important;
+    border-color: #e5e7eb !important;
+}
+
+.airbnb-calendar-container .rdrDayDisabled::before {
+    display: none !important;
+}
+
+.airbnb-calendar-container .rdrDayDisabled .rdrDayNumber:after {
+    display: none !important;
+}
+
+.airbnb-calendar-container .rdrDayDisabled::after {
+    content: '' !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: 1.5rem !important;
+    height: 0.125rem !important;
+    background: #ef4444 !important;
+    transform: translate(-50%, -50%) rotate(45deg) !important;
+    pointer-events: none !important;
+    z-index: 2 !important;
+    border-radius: 1px !important;
+}
+
+.airbnb-calendar-container .rdrDayDisabled.rdrDayActive,
+.airbnb-calendar-container .rdrDayDisabled.rdrDayStartEdge,
+.airbnb-calendar-container .rdrDayDisabled.rdrDayEndEdge,
+.airbnb-calendar-container .rdrDayDisabled.rdrDayInRange {
+    background: linear-gradient(135deg, #f9fafb, #f3f4f6) !important;
+    color: #d1d5db !important;
+    border: 1px solid #e5e7eb !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* MONTH NAME */
+.airbnb-calendar-container .rdrMonthName {
+    font-weight: 700 !important;
+    font-size: 1.125rem !important;
+    color: #1f2937 !important;
+    letter-spacing: -0.025em !important;
+}
+
+/* FOCUS STATES */
+.airbnb-calendar-container .rdrDay:focus {
+    outline: none !important;
+    border: 2px solid #3b82f6 !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* ==============================================
+   RESPONSIVE DESIGN - IMPROVED
+   ============================================== */
+
+/* TABLET STYLES */
+@media (max-width: 1024px) and (min-width: 769px) {
+    .modal-container {
+        padding: 1rem !important;
+        max-width: calc(100vw - 2rem) !important;
+    }
+    
+    .airbnb-calendar-container .rdrMonths {
+        gap: 1.5rem !important;
+    }
+}
+
+/* MOBILE STYLES */
 @media (max-width: 768px) {
     .modal-container {
         left: 50% !important;
@@ -1438,7 +1487,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         border-radius: 8px !important;
         overflow: hidden !important;
     }
-    
+     .airbnb-calendar-container .rdrMonthAndYearWrapper {
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
     .airbnb-calendar-container .rdrMonths {
         flex-direction: column !important;
         gap: 1rem !important;
@@ -1450,12 +1502,12 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         max-width: 100% !important;
         padding: 0.5rem !important;
         margin: 0 !important;
+        box-sizing: border-box !important;
     }
     
-    .airbnb-calendar-container .rdrMonthAndYearWrapper {
-        height: 2.5rem !important;
-        padding: 0 0.5rem !important;
-        margin-bottom: 0.5rem !important;
+   .airbnb-calendar-container .rdrMonthAndYearWrapper {
+        width: 100% !important;
+        box-sizing: border-box !important;
     }
     
     .airbnb-calendar-container .rdrMonthAndYearPickers {
@@ -1467,29 +1519,70 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         height: 1.75rem !important;
     }
     
-    .airbnb-calendar-container .rdrWeekDays {
+     .airbnb-calendar-container .rdrWeekDays {
+        display: grid !important;
+        grid-template-columns: repeat(7, 1fr) !important;
+        gap: 0 !important;
+        width: 100% !important;
         padding: 0.25rem 0 !important;
         margin-bottom: 0.25rem !important;
+        box-sizing: border-box !important;
     }
     
+    /* Ensure week day cells are properly sized */
     .airbnb-calendar-container .rdrWeekDay {
+        width: 100% !important;
+        text-align: center !important;
+        padding: 0 !important;
+        margin: 0 !important;
         font-size: 0.6rem !important;
         height: 1.5rem !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-sizing: border-box !important;
     }
     
     .airbnb-calendar-container .rdrDay {
+        width: 100% !important;
         height: 2.25rem !important;
-        width: 2.25rem !important;
-        line-height: 2.25rem !important;
-        margin: 0.0625rem !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-sizing: border-box !important;
         border-radius: 6px !important;
     }
+    .airbnb-calendar-container .rdrDay span {
+        width: calc(100% - 4px) !important;
+        height: calc(100% - 4px) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 2px !important;
+    }
+    
     
     .airbnb-calendar-container .rdrDayNumber {
         font-size: 0.75rem !important;
     }
+    
+    .airbnb-calendar-container .rdrCalendarWrapper {
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    
+     .airbnb-calendar-container .rdrDays {
+        display: grid !important;
+        grid-template-columns: repeat(7, 1fr) !important;
+        gap: 0 !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
 }
 
+/* SMALL MOBILE */
 @media (max-width: 480px) {
     .modal-container {
         padding: 0.25rem !important;
@@ -1575,7 +1668,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     }
 }
 
-/* Additional fix for very small screens */
+/* VERY SMALL SCREENS */
 @media (max-width: 375px) {
     .airbnb-calendar-container .rdrDay {
         height: 1.875rem !important;
@@ -1588,7 +1681,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     }
 }
 
-/* Landscape mobile fix */
+/* LANDSCAPE MOBILE */
 @media (max-height: 600px) and (orientation: landscape) {
     .modal-content {
         max-height: calc(100vh - 0.5rem) !important;
@@ -1610,80 +1703,144 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         min-width: 6rem !important;
     }
 }
-                                            
-                                                    
-                                            
-                                                    @media (min-width: 769px) and (max-width: 1024px) {
-                                                        .modal-container {
-                                                            left: 50% !important;
-                                                        }
-                                                        
-                                                        .airbnb-calendar-container .rdrMonths {
-                                                            gap: 1.5rem !important;
-                                                        }
-                                                    }
-                                            
-                                                    @media (min-width: 1025px) {
-                                                        .modal-container {
-                                                            left: calc(50% + 1cm) !important;
-                                                        }
-                                                    }
-                                            
-                                                    /* ==============================================
-                                                       BROWSER COMPATIBILITY
-                                                       ============================================== */
-                                            
-                                                    @supports (-webkit-appearance: none) {
-                                                        .modal-content {
-                                                            -webkit-overflow-scrolling: touch !important;
-                                                        }
-                                                        
-                                                        .airbnb-calendar-container {
-                                                            -webkit-transform: translateZ(0) !important;
-                                                        }
-                                                    }
-                                            
-                                                    @-moz-document url-prefix() {
-                                                        .modal-content {
-                                                            scrollbar-width: thin !important;
-                                                            scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important;
-                                                        }
-                                                    }
-                                            
-                                                    @supports (-ms-ime-align: auto) {
-                                                        .modal-container {
-                                                            display: -ms-flexbox !important;
-                                                            -ms-flex-align: center !important;
-                                                            -ms-flex-pack: center !important;
-                                                        }
-                                                    }
-                                            
-                                                    /* ==============================================
-                                                       ACCESSIBILITY IMPROVEMENTS
-                                                       ============================================== */
-                                            
-                                                    @media (prefers-reduced-motion: reduce) {
-                                                        .modal-overlay,
-                                                        .modal-container,
-                                                        .airbnb-calendar-container .rdrDay,
-                                                        .airbnb-calendar-container .rdrNextPrevButton,
-                                                        .close-btn,
-                                                        .reset-btn {
-                                                            animation: none !important;
-                                                            transition: none !important;
-                                                        }
-                                                    }
-                                            
-                                                    @media (prefers-color-scheme: dark) {
-                                                        .modal-content {
-                                                            background: linear-gradient(135deg, #1f2937, #374151) !important;
-                                                            color: #f9fafb !important;
-                                                        }
-                                                        
-                                                        .airbnb-calendar-container {
-                                                            background: linear-gradient(135deg, #374151, #4b5563) !important;
-                                                        }
-                                                    }
+
+/* LARGE SCREENS */
+@media (min-width: 1440px) {
+    .modal-container {
+        max-width: 1200px !important;
+    }
+    
+    .airbnb-calendar-container .rdrMonths {
+        gap: 3rem !important;
+    }
+}
+
+/* ==============================================
+   BROWSER COMPATIBILITY
+   ============================================== */
+
+@supports (-webkit-appearance: none) {
+    .modal-content {
+        -webkit-overflow-scrolling: touch !important;
+    }
+    
+    .airbnb-calendar-container {
+        -webkit-transform: translateZ(0) !important;
+    }
+}
+
+@-moz-document url-prefix() {
+    .modal-content {
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important;
+    }
+}
+
+@supports (-ms-ime-align: auto) {
+    .modal-container {
+        display: -ms-flexbox !important;
+        -ms-flex-align: center !important;
+        -ms-flex-pack: center !important;
+    }
+}
+
+/* ==============================================
+   ACCESSIBILITY IMPROVEMENTS
+   ============================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-overlay,
+    .modal-container,
+    .airbnb-calendar-container .rdrDay,
+    .airbnb-calendar-container .rdrNextPrevButton,
+    .close-btn,
+    .reset-btn {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .modal-content {
+        background: linear-gradient(135deg, #1f2937, #374151) !important;
+        color: #f9fafb !important;
+    }
+    
+    .airbnb-calendar-container {
+        background: linear-gradient(135deg, #374151, #4b5563) !important;
+    }
+    
+    .airbnb-calendar-container .rdrMonth {
+        background: rgba(55, 65, 81, 0.7) !important;
+        border-color: rgba(255, 255, 255, 0.1) !important;
+    }
+    
+    .airbnb-calendar-container .rdrDay {
+        background: rgba(31, 41, 55, 0.8) !important;
+        color: #f9fafb !important;
+    }
+    
+    .airbnb-calendar-container .rdrDayNumber {
+        color: #f9fafb !important;
+    }
+    
+    .modal-instruction-blue {
+        background: linear-gradient(135deg, #1e3a8a, #1e40af) !important;
+        color: #dbeafe !important;
+        border-color: #3b82f6 !important;
+    }
+    
+    .modal-instruction-green {
+        background: linear-gradient(135deg, #14532d, #166534) !important;
+        color: #bbf7d0 !important;
+        border-color: #22c55e !important;
+    }
+}
+
+/* ==============================================
+   PRINT STYLES
+   ============================================== */
+
+@media print {
+    .modal-portal,
+    .modal-overlay {
+        display: none !important;
+    }
+    
+    
+    
+       .rdrDayInRange {
+        background: linear-gradient(135deg, #fce7f3, #fbcfe8) !important;
+        position: relative !important;
+    }
+    
+    /* Unavailable dates within range */
+    .rdrDayInRange.rdrDayDisabled {
+        background: linear-gradient(135deg, #fce7f3, #fbcfe8) !important;
+        position: relative !important;
+    }
+    
+    .rdrDayInRange.rdrDayDisabled::after {
+        content: '' !important;
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        width: 1.5rem !important;
+        height: 0.125rem !important;
+        background: #ef4444 !important;
+        transform: translate(-50%, -50%) rotate(45deg) !important;
+        pointer-events: none !important;
+        z-index: 2 !important;
+    }
+    
+    /* Keep the range background but show unavailable */
+    .rdrDayInRange.rdrDayDisabled .rdrDayNumber {
+        color: #9ca3af !important;
+        text-decoration: line-through !important;
+    }
+}
+
+                                                   
                                                 `
                                         }} />                                    </div>
                                 )}
@@ -1780,145 +1937,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                         );
                                     })()}
                                 </div>
-
-
-                                {/* Extras Selection */}
-                                <div className="relative mb-6">
-                                    <button
-                                        onClick={() => setShowExtrasPicker(!showExtrasPicker)}
-                                        className="w-full border border-gray-300 rounded-lg p-3 text-left hover:bg-gray-50 transition-colors flex items-center justify-between"
-                                    >
-                                        <div>
-                                            <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
-                                                Extras
-                                            </div>
-                                            <div className="text-sm">
-                                                {(() => {
-                                                    const selectedCount =
-                                                        (selectedExtras.towels ? 1 : 0) +
-                                                        (guests.pets > 0 ? 1 : 0); // Count pets as an extra if > 0
-
-                                                    if (selectedCount === 0) return 'Keine Extras';
-                                                    if (selectedCount === 1) return '1 Extra gewählt';
-                                                    return `${selectedCount} Extras gewählt`;
-                                                })()}
-                                            </div>
-                                        </div>
-                                        <ChevronDown
-                                            className={`w-4 h-4 transition-transform ${
-                                                showExtrasPicker ? 'rotate-180' : ''
-                                            }`}
-                                        />
-                                    </button>
-
-                                    {showExtrasPicker && (
-                                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg shadow-lg p-4 z-10">
-                                            {/* Towels Option */}
-                                            <div className="flex items-center justify-between py-3 border-b border-gray-200">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-5 h-5 flex items-center justify-center">
-                                                        <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0-2.21-1.79-4-4-4H4V7z" />
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7c0-2.21 1.79-4 4-4h8c2.21 0 4 1.79 4 4v10" />
-                                                        </svg>
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-medium">Handtücher</div>
-                                                        <div className="text-sm text-gray-500">
-                                                            Miete möglich, € 8.00 p.P./ Aufenthalt
-                                                        </div>
-                                                        {selectedExtras.towels && (
-                                                            <div className="text-xs text-green-600 font-medium">
-                                                                {guests.adults + guests.children + guests.babies} Person(en) × €8.00 = €{8 * (guests.adults + guests.children + guests.babies)}.00
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center">
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="sr-only peer"
-                                                            checked={selectedExtras.towels}
-                                                            onChange={(e) => setSelectedExtras(prev => ({
-                                                                ...prev,
-                                                                towels: e.target.checked
-                                                            }))}
-                                                        />
-                                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-rose-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
-                                                    </label>
-                                                </div>
-                                            </div>
-
-                                            {/* Pets Option - now with +/- buttons instead of just showing when pets > 0 */}
-                                            <div className="flex items-center justify-between py-3">
-                                                <div className="flex items-center gap-3">
-                                                    <Dog className="w-5 h-5 text-gray-600" />
-                                                    <div>
-                                                        <div className="font-medium">Haustiere</div>
-                                                        <div className="text-sm text-gray-500">
-                                                            € 7.00 pro Haustier/ Nacht (max. 2)
-                                                        </div>
-                                                        {guests.pets > 0 && selectedExtras.pets && (
-                                                            <div className="text-xs text-green-600 font-medium">
-                                                                {guests.pets} Haustier(e) × €7.00 × {calculateNights()} Nächte = €{7 * guests.pets * calculateNights()}.00
-
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-3">
-                                                    <button
-                                                        onClick={() => updateGuests('pets', false)}
-                                                        disabled={guests.pets === 0}
-                                                        className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-gray-400 transition-colors disabled:opacity-50"
-                                                    >
-                                                        –
-                                                    </button>
-                                                    <span className="w-8 text-center">{guests.pets}</span>
-                                                    <button
-                                                        onClick={() => {
-                                                            updateGuests('pets', true);
-                                                            // Auto-enable pet fee when adding pets
-                                                            if (guests.pets === 0) {
-                                                                setSelectedExtras(prev => ({
-                                                                    ...prev,
-                                                                    pets: true
-                                                                }));
-                                                            }
-                                                        }}
-                                                        disabled={guests.pets >= 2}
-                                                        className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-gray-400 transition-colors disabled:opacity-50"
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Pet fee toggle - only show when pets > 0 */}
-                                            {guests.pets > 0 && (
-                                                <div className="flex items-center justify-between py-2 pl-8 border-l-2 border-gray-100 ml-8">
-                                                    <div className="text-sm text-gray-600">
-                                                        Haustier-Gebühr hinzufügen
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="sr-only peer"
-                                                            checked={selectedExtras.pets}
-                                                            onChange={(e) => setSelectedExtras(prev => ({
-                                                                ...prev,
-                                                                pets: e.target.checked
-                                                            }))}
-                                                        />
-                                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-rose-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
-                                                    </label>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-
 
 
 
