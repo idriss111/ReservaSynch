@@ -30,7 +30,7 @@ public class HotelController {
     @Autowired
     private BelvillaApiService belvillaApiService;
 
-
+    
     @GetMapping("/{hotelId}")
     public ResponseEntity<Hotel> getHotel(@PathVariable Long hotelId) {
         try {
@@ -88,12 +88,14 @@ public class HotelController {
             @RequestParam(defaultValue = "3") Integer months) {
 
         try {
+            // If no start date provided, we will use current date
+            LocalDate effectiveStart = start != null ? start : LocalDate.now();
+
             logger.info("Getting available checkin dates for hotel {} starting from {} for {} months",
-                    hotelId, start, months);
+                    hotelId, effectiveStart, months);
 
-            List<LocalDate> checkinDates = belvillaApiService.getAvailableCheckinDates(hotelId, start, months);
+            List<LocalDate> checkinDates = belvillaApiService.getAvailableCheckinDates(hotelId, effectiveStart, months);
 
-            // Convert to string format for easy frontend consumption
             List<String> checkinDateStrings = checkinDates.stream()
                     .map(LocalDate::toString)
                     .collect(Collectors.toList());

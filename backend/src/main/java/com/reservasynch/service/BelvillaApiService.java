@@ -183,15 +183,19 @@ public class BelvillaApiService {
      * @return CalendarView with months, days, and stays data
      */
     public CalendarView getAvailability(Long hotelId, LocalDate startDate, Integer monthsAhead) {
-        // Set defaults if null
+        // Only set default if startDate is null - don't override it!
         if (startDate == null) {
             // Default: 1st of current month
             LocalDate now = LocalDate.now();
             startDate = LocalDate.of(now.getYear(), now.getMonth(), 1);
         }
+
         if (monthsAhead == null) {
             monthsAhead = 3; // Default: 3 months ahead
         }
+
+        logger.info("Getting availability for hotel {} from {} for {} months",
+                hotelId, startDate, monthsAhead);
 
         String url = buildAvailabilityUrl(hotelId, startDate, monthsAhead);
         HttpHeaders headers = createHeaders();
@@ -218,7 +222,6 @@ public class BelvillaApiService {
 
         return null;
     }
-
     /**
      * Get availability with default values
      * From 1st of current month to end of 3rd month ahead
@@ -299,18 +302,42 @@ public class BelvillaApiService {
      * @return List of available check-in dates
      */
     public List<LocalDate> getAvailableCheckinDates(Long hotelId, LocalDate startDate, Integer monthsAhead) {
+        // Set defaults if null
+        if (startDate == null) {
+            // Default: 1st of current month
+            LocalDate now = LocalDate.now();
+            startDate = LocalDate.of(now.getYear(), now.getMonth(), 1);
+        } else {
+            // Ensure we start from the 1st of the provided month
+            startDate = LocalDate.of(startDate.getYear(), startDate.getMonth(), 1);
+        }
+
+        if (monthsAhead == null) {
+            monthsAhead = 3; // Default: 3 months ahead
+        }
+
+        logger.info("Getting checkin dates for hotel {} from {} for {} months",
+                hotelId, startDate, monthsAhead);
+
         CalendarView availability = getAvailability(hotelId, startDate, monthsAhead);
 
         if (availability == null || availability.getMonths() == null) {
+            logger.warn("No availability data found for hotel {} from {}", hotelId, startDate);
             return new ArrayList<>();
         }
 
-        return availability.getMonths().stream()
+        List<LocalDate> checkinDates = availability.getMonths().stream()
                 .flatMap(month -> month.getDays().stream())
                 .map(day -> LocalDate.parse(day.getCheckin().substring(0, 10)))
+                .distinct() // Remove duplicates
+                .sorted()   // Sort chronologically
                 .collect(Collectors.toList());
-    }
 
+        logger.info("Found {} checkin dates for hotel {} from {}",
+                checkinDates.size(), hotelId, startDate);
+
+        return checkinDates;
+    }
     /**
      * Get available stays for a specific check-in date
      * @param hotelId The hotel ID

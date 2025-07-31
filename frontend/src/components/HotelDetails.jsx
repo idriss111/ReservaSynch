@@ -26,7 +26,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         pets: false
     });
     const [showExtrasPicker, setShowExtrasPicker] = useState(false);
-
+    const [availabilityPeriods, setAvailabilityPeriods] = useState(new Map()); // Cache for different periods
+    const [currentAvailabilityStart, setCurrentAvailabilityStart] = useState(null);
+    const [currentAvailabilityEnd, setCurrentAvailabilityEnd] = useState(null);
+    const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
 
 
     // Date and guest state
@@ -81,9 +84,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const fetchImages = async () => {
         try {
-            //   const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
+            // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
 
-             const response = await fetch(`/api/hotels/${hotelId}/images/urls`);
+                const response = await fetch(`/api/hotels/${hotelId}/images/urls`);
             const imageUrls = await response.json();
             setImages(imageUrls);
         } catch (error) {
@@ -97,10 +100,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             const checkin = format(dateRange[0].startDate, 'yyyy-MM-dd');
             const checkout = format(dateRange[0].endDate, 'yyyy-MM-dd');
             const totalGuests = guests.adults + guests.children;
-           // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`);
-                const response = await fetch(
-                  `/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
-                 );
+            //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`);
+              const response = await fetch(
+                 `/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
+               );
 
             if (!response.ok) {
                 console.log('Pricing not available for these dates');
@@ -116,31 +119,123 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         }
     };
 
+
     const fetchAvailability = async () => {
+        const today = new Date();
+        await fetchAvailabilityForPeriod(today);
+
+        // If we have existing check-in date, fetch checkout dates for it
+        if (dateRange[0].startDate) {
+            await fetchCheckoutDates(dateRange[0].startDate);
+        }
+
+        setLoading(false);
+    };
+    const fetchAvailabilityForPeriod = async (startDate) => {
+        const period = calculateAvailabilityPeriod(startDate);
+
+        // Check if we already have this period cached
+        if (availabilityPeriods.has(period.key)) {
+            const cachedData = availabilityPeriods.get(period.key);
+            setAvailableCheckinDates(cachedData.checkinDates);
+            setCurrentAvailabilityStart(period.start);
+            setCurrentAvailabilityEnd(period.end);
+            return;
+        }
+
+        setIsLoadingAvailability(true);
+
         try {
-            //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates`);
+            // Format start date for API - your existing endpoint expects 'start' and 'months'
+            const startParam = format(period.start, 'yyyy-MM-dd');
+            //  const response = await fetch(
+            // `http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates?start=${startParam}&months=3`
+            // );
 
-             const response = await fetch(`/api/hotels/${hotelId}/availability/checkin-dates`);
-            const dates = await response.json();
-            setAvailableCheckinDates(dates.map(date => new Date(date)));
 
-            // If we have existing check-in date, fetch checkout dates for it
-            if (dateRange[0].startDate) {
-                await fetchCheckoutDates(dateRange[0].startDate);
+            const response = await fetch(
+                `/api/hotels/${hotelId}/availability/checkin-dates?start=${startParam}&months=3`
+            );
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch availability');
             }
 
-            setLoading(false);
+            const dates = await response.json();
+            const checkinDates = dates.map(date => new Date(date));
+
+            // Cache the data
+            setAvailabilityPeriods(prev => new Map(prev).set(period.key, {
+                checkinDates,
+                period
+            }));
+
+            setAvailableCheckinDates(checkinDates);
+            setCurrentAvailabilityStart(period.start);
+            setCurrentAvailabilityEnd(period.end);
+
         } catch (error) {
-            console.error('Error fetching availability:', error);
-            setLoading(false);
+            console.error('Error fetching availability for period:', error);
+            setAvailableCheckinDates([]);
+        } finally {
+            setIsLoadingAvailability(false);
+        }
+    };
+
+    const calculateAvailabilityPeriod = (date) => {
+        console.log('🔍 Input date for calculation:', date); // ADD THIS
+        const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+        console.log('📅 Calculated start of month:', startOfMonth); // ADD THIS
+        const endDate = new Date(startOfMonth);
+        endDate.setMonth(endDate.getMonth() + 3);
+        endDate.setDate(0); // Last day of the 3rd month
+
+        return {
+            start: startOfMonth,
+            end: endDate,
+            key: `${startOfMonth.getFullYear()}-${startOfMonth.getMonth()}`
+        };
+    };
+    const isDateInLoadedPeriod = (date) => {
+        if (!currentAvailabilityStart || !currentAvailabilityEnd) return false;
+        return date >= currentAvailabilityStart && date <= currentAvailabilityEnd;
+    };
+
+// Function to check and load availability when user navigates calendar
+    const checkAndLoadAvailabilityForDate = async (date) => {
+        if (!isDateInLoadedPeriod(date)) {
+            await fetchAvailabilityForPeriod(date);
+        }
+    };
+
+
+    const handleMonthNavigation = async (focusedRange, preview) => {
+        if (preview && preview.startDate) {
+            await checkAndLoadAvailabilityForDate(preview.startDate);
+        }
+    };
+    const preloadNextPeriodIfNeeded = async (currentDate) => {
+        if (!currentAvailabilityEnd) return;
+
+        // If user is within 2 weeks of the end, preload next period
+        const twoWeeksBeforeEnd = new Date(currentAvailabilityEnd);
+        twoWeeksBeforeEnd.setDate(twoWeeksBeforeEnd.getDate() - 14);
+
+        if (currentDate >= twoWeeksBeforeEnd) {
+            const nextPeriodStart = new Date(currentAvailabilityEnd);
+            nextPeriodStart.setDate(nextPeriodStart.getDate() + 1);
+
+            // Load next period in background
+            fetchAvailabilityForPeriod(nextPeriodStart);
         }
     };
 
     const fetchCheckoutDates = async (checkinDate) => {
+
         try {
             const checkin = format(checkinDate, 'yyyy-MM-dd');
-            // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
-              const response = await fetch(`/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
+            //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
+             const response = await fetch(`/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
 
             if (!response.ok) {
                 console.log('No checkout dates available for this check-in');
@@ -207,6 +302,12 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             return true;
         }
 
+        // If date is outside loaded period, consider it unavailable
+        // (it will be loaded when user navigates to it)
+        if (!isDateInLoadedPeriod(date)) {
+            return true; // Will trigger loading when user navigates
+        }
+
         // If we haven't selected a check-in yet
         if (!selectedCheckin) {
             // Only available check-in dates are selectable
@@ -236,10 +337,11 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         }
     };
 
+
     const getDisabledDates = () => {
         const disabledDates = [];
         const startDate = new Date();
-        const endDate = addDays(startDate, 365); // Check next 365 days
+        const endDate = addDays(startDate, 90); // 3 months ≈ 90 daysRetryClaude can make mistakes. Please double-check responses.
 
         for (let d = startDate; d <= endDate; d = addDays(d, 1)) {
             if (isDateUnavailable(d)) {
@@ -303,11 +405,22 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             );
 
             if (isValidCheckout && newEndDate > selectedCheckin) {
+                // Set the complete date range with different start and end dates
+                // This will trigger the DateRangePicker to apply the proper classes
                 setDateRange([{
                     startDate: selectedCheckin,
                     endDate: newEndDate,
                     key: 'selection'
                 }]);
+
+                // Force a re-render to ensure styles are applied
+                setTimeout(() => {
+                    setDateRange([{
+                        startDate: selectedCheckin,
+                        endDate: newEndDate,
+                        key: 'selection'
+                    }]);
+                }, 0);
             }
         }
     };
@@ -784,20 +897,29 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                         <DateRangePicker
                                                             ranges={dateRange}
                                                             onChange={handleDateChange}
+                                                            //onPreviewChange={handleMonthNavigation} // ADD THIS LINE
+                                                            onShownDateChange={(shownDate) => {
+                                                                console.log('📅 Month changed to:', shownDate);
+                                                                if (shownDate) {
+                                                                    checkAndLoadAvailabilityForDate(shownDate);
+                                                                }
+                                                            }}
                                                             showSelectionPreview={true}
                                                             moveRangeOnFirstSelection={false}
                                                             months={1}
                                                             direction="horizontal"
-                                                            rangeColors={['#ec4899']}
+                                                            rangeColors={['#00BB77']}
                                                             minDate={new Date()}
-                                                            disabledDay={(date) => isDateUnavailable(date)} // Use function instead of array
+                                                            disabledDay={(date) => isDateUnavailable(date)}
                                                             dayContentRenderer={customDayContent}
                                                             monthDisplayFormat="MMMM yyyy"
                                                             staticRanges={[]}
                                                             inputRanges={[]}
                                                             preventSnapRefocus={true}
                                                             calendarFocus="forwards"
+                                                            weekStartsOn={1}
                                                         />
+
                                                     </div>
                                                 </div>
 
@@ -805,22 +927,24 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                 <div className="modal-footer">
                                                     <button
                                                         onClick={() => {
+                                                            // Reset to initial state
                                                             const today = new Date();
-                                                            const tomorrow = new Date(today);
-                                                            tomorrow.setDate(today.getDate() + 1);
-
                                                             setDateRange([{
                                                                 startDate: today,
-                                                                endDate: tomorrow,
+                                                                endDate: today,
                                                                 key: 'selection'
                                                             }]);
                                                             setSelectedCheckin(null);
                                                             setAvailableCheckoutDates([]);
+                                                            setPricing(null);
+                                                            // Force re-fetch availability for today
+                                                            fetchAvailabilityForPeriod(today);
                                                         }}
                                                         className="reset-btn"
                                                     >
                                                         Reisedaten zurücksetzen
                                                     </button>
+
                                                     <button
                                                         onClick={() => setShowDatePicker(false)}
                                                         className="close-btn"
@@ -834,7 +958,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                         {/* Updated Styles */}
                                         <style dangerouslySetInnerHTML={{
                                             __html: `
-                                                   /* MODAL FOUNDATION */
+/* MODAL FOUNDATION */
 .modal-portal {
     position: fixed !important;
     top: 0 !important;
@@ -937,7 +1061,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     margin-bottom: 1.5rem !important;
     padding: 0 2rem 1.5rem 2rem !important;
     border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
-    background: linear-gradient(90deg, rgba(236, 72, 153, 0.05), rgba(190, 24, 93, 0.05)) !important;
+    background: linear-gradient(90deg, rgba(92, 230, 92, 0.05), rgba(0, 154, 0, 0.05)) !important;
 }
 
 .modal-header div {
@@ -1065,7 +1189,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 }
 
 /* ==============================================
-   PREMIUM CALENDAR STYLES
+   PREMIUM CALENDAR STYLES - FIXED FOR 7 DAYS
    ============================================== */
 
 .airbnb-calendar-container {
@@ -1074,6 +1198,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     background: linear-gradient(135deg, #ffffff, #fafafa) !important;
     border-radius: 16px !important;
     width: fit-content !important;
+    min-width: 320px !important;
     margin: 0 auto !important;
     padding: 1.5rem !important;
     box-shadow: 
@@ -1088,9 +1213,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 }
 
 .airbnb-calendar-container .rdrCalendarWrapper {
-        width: 100% !important;
-        box-sizing: border-box !important;
-    }
+    width: 100% !important;
+    min-width: 280px !important;
+    box-sizing: border-box !important;
+}
 
 .airbnb-calendar-container .rdrDateRangeWrapper,
 .airbnb-calendar-container .rdrDateRangePickerWrapper {
@@ -1113,21 +1239,23 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 }
 
 .airbnb-calendar-container .rdrMonth {
-    padding: 0 !important;
+    padding: 1rem !important;
     margin: 0 !important;
     background: rgba(255, 255, 255, 0.7) !important;
     border-radius: 12px !important;
-    padding: 1rem !important;
     border: 1px solid rgba(0, 0, 0, 0.05) !important;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
     backdrop-filter: blur(10px) !important;
+    width: 100% !important;
+    min-width: 280px !important;
+    box-sizing: border-box !important;
 }
 
 /* MONTH HEADER */
 .airbnb-calendar-container .rdrMonthAndYearWrapper {
-        width: 100% !important;
-        box-sizing: border-box !important;
-    }
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
 
 .airbnb-calendar-container .rdrMonthAndYearPickers {
     font-weight: 700 !important;
@@ -1159,7 +1287,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     left: 50% !important;
     width: 0 !important;
     height: 0 !important;
-    background: rgba(236, 72, 153, 0.1) !important;
+    background: rgba(92, 230, 92, 0.1) !important;
     border-radius: 50% !important;
     transition: all 0.3s ease !important;
     transform: translate(-50%, -50%) !important;
@@ -1171,24 +1299,29 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 }
 
 .airbnb-calendar-container .rdrNextPrevButton:hover {
-    background: linear-gradient(135deg, #fdf2f8, #fce7f3) !important;
-    border-color: #ec4899 !important;
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
+    border-color: #5CE65C !important;
     transform: scale(1.1) !important;
-    box-shadow: 0 4px 12px rgba(236, 72, 153, 0.25) !important;
+    box-shadow: 0 4px 12px rgba(92, 230, 92, 0.25) !important;
 }
 
-/* WEEK DAYS */
+/* WEEK DAYS - FIXED FOR 7 COLUMNS */
 .airbnb-calendar-container .rdrWeekDays {
-    padding: 0.5rem 0 !important;
-    margin-bottom: 0.5rem !important;
+    padding: 0.25rem 0 !important;
+    margin-bottom: 0.25rem !important;
     background: rgba(255, 255, 255, 0.6) !important;
     border-radius: 8px !important;
     border: 1px solid rgba(0, 0, 0, 0.05) !important;
+    display: grid !important;
+    grid-template-columns: repeat(7, 1fr) !important;
+    gap: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
 
 .airbnb-calendar-container .rdrWeekDay {
-    color: #6b7280 !important;
-    font-weight: 600 !important;
+    color: #5e5e5e !important;
+    font-weight: 900 !important;
     font-size: 0.75rem !important;
     text-transform: uppercase !important;
     letter-spacing: 0.05em !important;
@@ -1196,22 +1329,34 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
 
-/* DAY CELLS - PREMIUM INTERACTIONS */
+/* DAYS GRID - FIXED FOR 7 COLUMNS */
+.airbnb-calendar-container .rdrDays {
+    display: grid !important;
+    grid-template-columns: repeat(7, 1fr) !important;
+    gap: 0.125rem !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* DAY CELLS - FIXED WIDTH SYSTEM */
 .airbnb-calendar-container .rdrDay {
-    height: 2.75rem !important;
-    width: 2.75rem !important;
-    line-height: 2.75rem !important;
-    margin: 0.125rem !important;
+    height: 2.5rem !important;
+    width: 100% !important;
+    line-height: 2.5rem !important;
+    margin: 0 !important;
     border-radius: 10px !important;
     position: relative !important;
     cursor: pointer !important;
     transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
     border: 2px solid transparent !important;
-    background: rgba(255, 255, 255, 0.8) !important;
+    background: rgba(245, 255, 245, 0.8) !important;
     backdrop-filter: blur(5px) !important;
     overflow: hidden !important;
+    box-sizing: border-box !important;
 }
 
 .airbnb-calendar-container .rdrDay::before {
@@ -1221,7 +1366,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     left: 50% !important;
     width: 0 !important;
     height: 0 !important;
-    background: rgba(236, 72, 153, 0.1) !important;
+    background: rgba(92, 230, 92, 0.1) !important;
     border-radius: 50% !important;
     transition: all 0.3s ease !important;
     transform: translate(-50%, -50%) !important;
@@ -1237,7 +1382,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     background: rgba(255, 255, 255, 0.95) !important;
     transform: scale(1.05) translateY(-1px) !important;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-    border-color: rgba(236, 72, 153, 0.3) !important;
+    border-color: rgba(92, 230, 92, 0.3) !important;
 }
 
 .airbnb-calendar-container .rdrDay:active {
@@ -1277,16 +1422,54 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     display: none !important;
 }
 
+/* HOVERED DAYS */
+.airbnb-calendar-container .rdrDayHovered {
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
+    border: 2px solid #5CE65C !important;
+    box-shadow: 0 2px 8px rgba(92, 230, 92, 0.2) !important;
+    color: #166534 !important;
+}
+
+.airbnb-calendar-container .rdrDayHovered .rdrDayNumber {
+    color: #166534 !important;
+    font-weight: 600 !important;
+}
+
 /* SELECTED DAYS */
-.airbnb-calendar-container .rdrDayActive,
-.airbnb-calendar-container .rdrDayStartEdge,
-.airbnb-calendar-container .rdrDayEndEdge {
-    background: linear-gradient(135deg, #ec4899, #be185d) !important;
+.airbnb-calendar-container .rdrDay.checkout-preview:hover {
+    background: linear-gradient(135deg, #dcfce7, #bbf7d0) !important;
+    border: 2px solid #22c55e !important;
+    color: #166534 !important;
+}
+
+.airbnb-calendar-container .rdrDayActive [style*="rgb(236, 72, 153)"]{
+    background: linear-gradient(135deg, #5CE65C, #009A00) !important;
     color: white !important;
-    border: 2px solid #be185d !important;
+    border: 2px solid #009A00 !important;
     box-shadow: 
-        0 4px 15px rgba(236, 72, 153, 0.4),
-        0 0 0 3px rgba(236, 72, 153, 0.2) !important;
+        0 4px 15px rgba(92, 230, 92, 0.4),
+        0 0 0 3px rgba(92, 230, 92, 0.2) !important;
+    transform: scale(1.05) !important;
+}
+
+.airbnb-calendar-container .rdrDayStartEdge {
+    background: linear-gradient(135deg, #5CE65C, #009A00) !important;
+    color: white !important;
+    border: 2px solid #009A00 !important;
+    box-shadow: 
+        0 4px 15px rgba(92, 230, 92, 0.4),
+        0 0 0 3px rgba(92, 230, 92, 0.2) !important;
+    transform: scale(1.05) !important;
+}
+
+.airbnb-calendar-container .rdrDayEndEdge,
+.airbnb-calendar-container .rdrDayEndEdge.rdrDayActive {
+    background: linear-gradient(135deg, #5CE65C, #009A00) !important;
+    color: white !important;
+    border: 2px solid #009A00 !important;
+    box-shadow: 
+        0 4px 15px rgba(92, 230, 92, 0.4),
+        0 0 0 3px rgba(92, 230, 92, 0.2) !important;
     transform: scale(1.05) !important;
 }
 
@@ -1300,25 +1483,18 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
 /* RANGE DAYS */
 .airbnb-calendar-container .rdrDayInRange {
-    background: linear-gradient(135deg, #fce7f3, #fbcfe8) !important;
-    color: #be185d !important;
-    border: 1px solid #f9a8d4 !important;
-    box-shadow: inset 0 1px 3px rgba(236, 72, 153, 0.1) !important;
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
+    color: #166534 !important;
+    border: 1px solid #86efac !important;
+    box-shadow: inset 0 1px 3px rgba(92, 230, 92, 0.1) !important;
 }
 
 .airbnb-calendar-container .rdrDayInRange .rdrDayNumber {
-    color: #be185d !important;
+    color: #166534 !important;
     font-weight: 600 !important;
 }
 
-/* HOVERED DAYS */
-.airbnb-calendar-container .rdrDayHovered {
-    background: linear-gradient(135deg, #f3f4f6, #e5e7eb) !important;
-    border: 2px solid #9ca3af !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
-}
-
-/* FIXED: DISABLED DAYS - Now truly unclickable */
+/* DISABLED DAYS */
 .airbnb-calendar-container .rdrDayDisabled {
     color: #d1d5db !important;
     cursor: not-allowed !important;
@@ -1326,7 +1502,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     background: linear-gradient(135deg, #f9fafb, #f3f4f6) !important;
     border: 1px solid #e5e7eb !important;
     opacity: 0.6 !important;
-    pointer-events: none !important; /* Makes it unclickable */
+    pointer-events: none !important;
 }
 
 .airbnb-calendar-container .rdrDayDisabled:hover {
@@ -1351,7 +1527,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     left: 50% !important;
     width: 1.5rem !important;
     height: 0.125rem !important;
-    background: #ef4444 !important;
+    background: #2b2b2b !important;
     transform: translate(-50%, -50%) rotate(45deg) !important;
     pointer-events: none !important;
     z-index: 2 !important;
@@ -1382,6 +1558,26 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     outline: none !important;
     border: 2px solid #3b82f6 !important;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Add these additional rules to ensure higher specificity and override any blue colors */
+.airbnb-calendar-container .rdrDay[style*="color: rgb(61, 145, 255)"] {
+    color: #166534 !important;
+}
+
+.airbnb-calendar-container .rdrDayHovered[style*="rgb(61, 145, 255)"] {
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
+    border: 2px solid #5CE65C !important;
+    color: #166534 !important;
+}
+
+/* Force override any inline styles that might be setting blue colors */
+.airbnb-calendar-container .rdrDay {
+    color: #374151 !important;
+}
+
+.airbnb-calendar-container .rdrDay:hover {
+    color: #166534 !important;
 }
 
 /* ==============================================
@@ -1486,11 +1682,14 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         max-width: 100% !important;
         border-radius: 8px !important;
         overflow: hidden !important;
+        min-width: 280px !important;
     }
-     .airbnb-calendar-container .rdrMonthAndYearWrapper {
+    
+    .airbnb-calendar-container .rdrMonthAndYearWrapper {
         width: 100% !important;
         box-sizing: border-box !important;
     }
+    
     .airbnb-calendar-container .rdrMonths {
         flex-direction: column !important;
         gap: 1rem !important;
@@ -1503,11 +1702,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         padding: 0.5rem !important;
         margin: 0 !important;
         box-sizing: border-box !important;
-    }
-    
-   .airbnb-calendar-container .rdrMonthAndYearWrapper {
-        width: 100% !important;
-        box-sizing: border-box !important;
+        min-width: 260px !important;
     }
     
     .airbnb-calendar-container .rdrMonthAndYearPickers {
@@ -1519,7 +1714,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         height: 1.75rem !important;
     }
     
-     .airbnb-calendar-container .rdrWeekDays {
+    .airbnb-calendar-container .rdrWeekDays {
         display: grid !important;
         grid-template-columns: repeat(7, 1fr) !important;
         gap: 0 !important;
@@ -1554,6 +1749,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         box-sizing: border-box !important;
         border-radius: 6px !important;
     }
+    
     .airbnb-calendar-container .rdrDay span {
         width: calc(100% - 4px) !important;
         height: calc(100% - 4px) !important;
@@ -1563,7 +1759,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         margin: 2px !important;
     }
     
-    
     .airbnb-calendar-container .rdrDayNumber {
         font-size: 0.75rem !important;
     }
@@ -1571,12 +1766,13 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     .airbnb-calendar-container .rdrCalendarWrapper {
         width: 100% !important;
         box-sizing: border-box !important;
+        min-width: 260px !important;
     }
     
-     .airbnb-calendar-container .rdrDays {
+    .airbnb-calendar-container .rdrDays {
         display: grid !important;
         grid-template-columns: repeat(7, 1fr) !important;
-        gap: 0 !important;
+        gap: 0.125rem !important;
         width: 100% !important;
         box-sizing: border-box !important;
     }
@@ -1627,6 +1823,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     
     .airbnb-calendar-container {
         padding: 0.5rem !important;
+        min-width: 250px !important;
     }
     
     .airbnb-calendar-container .rdrMonths {
@@ -1635,6 +1832,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     
     .airbnb-calendar-container .rdrMonth {
         padding: 0.375rem !important;
+        min-width: 230px !important;
     }
     
     .airbnb-calendar-container .rdrMonthAndYearWrapper {
@@ -1653,9 +1851,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     
     .airbnb-calendar-container .rdrDay {
         height: 2rem !important;
-        width: 2rem !important;
-        line-height: 2rem !important;
-        margin: 0.0625rem !important;
+        margin: 0 !important;
     }
     
     .airbnb-calendar-container .rdrDayNumber {
@@ -1666,14 +1862,32 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         font-size: 0.563rem !important;
         height: 1.25rem !important;
     }
+    
+    .airbnb-calendar-container .rdrCalendarWrapper {
+        min-width: 230px !important;
+    }
+    
+    .airbnb-calendar-container .rdrDays {
+        gap: 0.0625rem !important;
+    }
 }
 
 /* VERY SMALL SCREENS */
 @media (max-width: 375px) {
+    .airbnb-calendar-container {
+        min-width: 240px !important;
+    }
+    
+    .airbnb-calendar-container .rdrMonth {
+        min-width: 220px !important;
+    }
+    
+    .airbnb-calendar-container .rdrCalendarWrapper {
+        min-width: 220px !important;
+    }
+    
     .airbnb-calendar-container .rdrDay {
         height: 1.875rem !important;
-        width: 1.875rem !important;
-        line-height: 1.875rem !important;
     }
     
     .airbnb-calendar-container .rdrDayNumber {
@@ -1712,6 +1926,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     
     .airbnb-calendar-container .rdrMonths {
         gap: 3rem !important;
+    }
+    
+    .airbnb-calendar-container {
+        min-width: 350px !important;
     }
 }
 
@@ -1807,16 +2025,14 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         display: none !important;
     }
     
-    
-    
-       .rdrDayInRange {
-        background: linear-gradient(135deg, #fce7f3, #fbcfe8) !important;
+    .rdrDayInRange {
+        background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
         position: relative !important;
     }
     
     /* Unavailable dates within range */
     .rdrDayInRange.rdrDayDisabled {
-        background: linear-gradient(135deg, #fce7f3, #fbcfe8) !important;
+        background: linear-gradient(135deg, #f0fdf4, #dcfce7) !important;
         position: relative !important;
     }
     
@@ -1839,10 +2055,13 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         text-decoration: line-through !important;
     }
 }
-
+        
                                                    
                                                 `
-                                        }} />                                    </div>
+                                        }} />
+                                    </div>
+
+
                                 )}
                                 {/* Guest Selection */}
                              <div className="relative mb-6">
