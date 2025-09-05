@@ -6,13 +6,12 @@ import java.util.List;
 public class Day {
 
     @JsonProperty("checkin")
-    private String checkin;  // "2025-08-01T00:00:01"
+    private String checkin;
 
     @JsonProperty("week_day_number")
     private Integer weekDayNumber;  // 5 (Friday)
-
     @JsonProperty("minimum_days_stay")
-    private Integer minimumDaysStay;  // 3
+    private Integer minimumDaysStay;
 
     @JsonProperty("stays")
     private List<Stay> stays;

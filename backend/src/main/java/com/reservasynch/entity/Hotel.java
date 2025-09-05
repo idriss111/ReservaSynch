@@ -7,7 +7,6 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Hotel {
 
-    // Text fields - String is perfect
     @JsonProperty("hotel_name")
     private String hotelName;
 
@@ -16,10 +15,8 @@ public class Hotel {
 
     @JsonProperty("country_name")
     private String countryName;
-
     @JsonProperty("currency_code")
-    private String currencyCode;  // "EUR" - always 3 letters
-
+    private String currencyCode;
     @JsonProperty("currency_symbol")
     private String currencySymbol;
 

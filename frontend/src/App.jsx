@@ -11,7 +11,6 @@ const App = () => {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            {/* Optional Header - you can remove this if you don't want it */}
             <header className="bg-white shadow-sm border-b border-gray-200">
                 <div className="container mx-auto px-4 py-4 flex items-center">
                     <span className="inline-flex items-center text-blue-600">
@@ -23,7 +22,7 @@ const App = () => {
                 </div>
             </header>
 
-            {/* Main Content - Just HotelDetails */}
+
             <main>
                 <HotelDetails
                     hotelId={100003163}

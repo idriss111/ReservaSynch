@@ -11,7 +11,7 @@ import { DateRangePicker } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
-const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
+const HotelDetailss = ({ hotelId = 100003163, onBack, searchInfo }) => {
     // State management , Hooks:
     const [hotel, setHotel] = useState(null);
     const [images, setImages] = useState([]);
@@ -85,7 +85,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         try {
             // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
 
-            const response = await fetch(`/api/hotels/${hotelId}`);
+            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
             const data = await response.json();
             setHotel(data);
         } catch (error) {
@@ -97,7 +97,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         try {
             // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
 
-            const response = await fetch(`api/hotels/${hotelId}/images/urls`);
+            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
             const imageUrls = await response.json();
             setImages(imageUrls);
         } catch (error) {
@@ -113,7 +113,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             const totalGuests = guests.adults + guests.children;
             //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`);
             const response = await fetch(
-                `/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
+                `http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
             );
 
             if (!response.ok) {
@@ -168,7 +168,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
 
             const response = await fetch(
-                `/api/hotels/${hotelId}/availability/checkin-dates?start=${startParam}&months=3`
+                `http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates?start=${startParam}&months=3`
             );
 
             if (!response.ok) {
@@ -266,7 +266,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         try {
             const checkin = format(checkinDate, 'yyyy-MM-dd');
             //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
-            const response = await fetch(`/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
+            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
 
             if (!response.ok) {
                 console.log('No checkout dates available for this check-in');
@@ -1836,4 +1836,4 @@ color: inherit !important;
     );
 };
 
-export default HotelDetails;
+export default HotelDetailss;
