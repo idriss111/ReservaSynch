@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef,useMemo } from 'react';
 import {
     ArrowLeft, MapPin, Star, Wifi, Coffee, Car, Clock,
     Bed, Check, X, ChevronLeft, ChevronRight, Heart, Share,
@@ -6,10 +6,12 @@ import {
     AlertTriangle, Wind, Home, CreditCard, HeadphonesIcon,
     Phone, Banknote, Sparkles, Bath, Ruler, UserCheck , AlertCircle, CalendarX
 } from 'lucide-react';
-import { addDays, format, isSameDay, isWeekend, parseISO } from 'date-fns';
+import { addDays, format, isSameDay, isWeekend, parseISO,differenceInCalendarDays } from 'date-fns';
 import { DateRangePicker } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
+import { de } from 'date-fns/locale/de';
+
 
 const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     // State management , Hooks:
@@ -17,6 +19,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     const [images, setImages] = useState([]);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [pricing, setPricing] = useState(null);
+
     const [availableCheckinDates, setAvailableCheckinDates] = useState([]);
     const [availableCheckoutDates, setAvailableCheckoutDates] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -30,26 +33,36 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     const [currentAvailabilityStart, setCurrentAvailabilityStart] = useState(null);
     const [currentAvailabilityEnd, setCurrentAvailabilityEnd] = useState(null);
     const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
-
-
-
+    // ISO helper so our Sets are fast/reliable
+    const toISO = (d) => format(d, 'yyyy-MM-dd');
+    // precomputed coloring based on cadence
+    const [cadenceOkDays,  setCadenceOkDays]  = useState(new Set()); // light-green (not-arrival)
+    const [cadenceBadDays, setCadenceBadDays] = useState(new Set()); // red (not-bookable)
     // Date and guest state
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showGuestPicker, setShowGuestPicker] = useState(false);
     const isValidDate = d => d instanceof Date && !isNaN(d);
     const fmt = (d, p = 'dd.MM.yyyy') => (isValidDate(d) ? format(d, p) : '—');
     const EMPTY_RANGE = { startDate: null, endDate: null, key: 'selection' };
+    // ---- Month control & stable "today"
+    const todayRef = useRef(new Date());
+    todayRef.current.setHours(0,0,0,0);
+// Keep the left panel's month fully controlled
+    const [leftMonth, setLeftMonth] = useState(
+        new Date(todayRef.current.getFullYear(), todayRef.current.getMonth(), 1)
+    );
 
     const [dateRange, setDateRange] = useState([EMPTY_RANGE]);
     const hasRealRange =
         !!selectedCheckin && !!dateRange[0].endDate && dateRange[0].endDate > selectedCheckin;
-
-    const pickerRanges = [{
-        // give it something to render, but we’ll hide the highlight unless hasRealRange
-        startDate: selectedCheckin || new Date(),
-        endDate: dateRange[0].endDate || selectedCheckin || new Date(),
-        key: 'selection'
-    }];
+    const pickerRanges = useMemo(() => {
+        const fallback = selectedCheckin || dateRange[0].endDate || leftMonth;
+        return [{
+            startDate: selectedCheckin || fallback,
+            endDate: dateRange[0].endDate || selectedCheckin || fallback,
+            key: 'selection'
+        }];
+    }, [selectedCheckin, dateRange[0].endDate, leftMonth]);
 
     const [guests, setGuests] = useState({
         adults: 2,
@@ -79,25 +92,22 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         }
     }, [guests.pets, selectedExtras.pets]);
 
-
-
     const fetchHotelData = async () => {
         try {
             // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
 
-            const response = await fetch(`/api/hotels/${hotelId}`);
+            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}`);
             const data = await response.json();
             setHotel(data);
         } catch (error) {
             console.error('Error fetching hotel:', error);
         }
     };
-
     const fetchImages = async () => {
         try {
             // const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
 
-            const response = await fetch(`api/hotels/${hotelId}/images/urls`);
+            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/images/urls`);
             const imageUrls = await response.json();
             setImages(imageUrls);
         } catch (error) {
@@ -105,7 +115,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             setImages([]);
         }
     };
-
     const fetchPricing = async () => {
         try {
             const checkin = format(dateRange[0].startDate, 'yyyy-MM-dd');
@@ -113,7 +122,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             const totalGuests = guests.adults + guests.children;
             //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`);
             const response = await fetch(
-                `/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
+                `http://localhost:8080/api/hotels/${hotelId}/pricing/dates?checkin=${checkin}&checkout=${checkout}`
             );
 
             if (!response.ok) {
@@ -145,60 +154,50 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
         setLoading(false);
     };
-    const fetchAvailabilityForPeriod = async (startDate) => {
+    const fetchAvailabilityForPeriod = async (startDate, { silent = false } = {}) => {
         const period = calculateAvailabilityPeriod(startDate);
 
-        // Check if we already have this period cached
+        // cache hit
         if (availabilityPeriods.has(period.key)) {
-            const cachedData = availabilityPeriods.get(period.key);
-            setAvailableCheckinDates(cachedData.checkinDates);
-            setCurrentAvailabilityStart(period.start);
-            setCurrentAvailabilityEnd(period.end);
-            return;
+            const cached = availabilityPeriods.get(period.key);
+            if (!silent) {
+                setAvailableCheckinDates(cached.checkinDates);
+                setCurrentAvailabilityStart(cached.period.start);
+                setCurrentAvailabilityEnd(cached.period.end);
+            }
+            return cached;
         }
 
         setIsLoadingAvailability(true);
-
         try {
-            // Format start date for API - your existing endpoint expects 'start' and 'months'
             const startParam = format(period.start, 'yyyy-MM-dd');
-            //  const response = await fetch(
-            // `http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates?start=${startParam}&months=3`
-            // );
-
-
-            const response = await fetch(
-                `/api/hotels/${hotelId}/availability/checkin-dates?start=${startParam}&months=3`
+            const res = await fetch(
+                `http://localhost:8080/api/hotels/${hotelId}/availability/checkin-dates?start=${startParam}&months=3`
             );
+            if (!res.ok) throw new Error('Failed to fetch availability');
 
-            if (!response.ok) {
-                throw new Error('Failed to fetch availability');
+            const dates = await res.json();
+            const checkinDates = dates.map(d => new Date(d));
+            const payload = { checkinDates, period };
+            addLoadedSpan({ start: period.start, end: period.end });
+            setTimeout(() => recomputeGlobalMaxDate([...loadedSpans, {start: period.start, end: period.end}]), 0);
+
+            setAvailabilityPeriods(prev => {
+                const m = new Map(prev);
+                m.set(period.key, payload);
+                return m;
+            });
+
+            if (!silent) {
+                setAvailableCheckinDates(checkinDates);
+                setCurrentAvailabilityStart(period.start);
+                setCurrentAvailabilityEnd(period.end);
             }
-
-            const dates = await response.json();
-            const checkinDates = dates.map(date => new Date(date));
-
-            // Cache the data
-            setAvailabilityPeriods(prev => new Map(prev).set(period.key, {
-                checkinDates,
-                period
-            }));
-
-            setAvailableCheckinDates(checkinDates);
-            setCurrentAvailabilityStart(period.start);
-            setCurrentAvailabilityEnd(period.end);
-
-        } catch (error) {
-            console.error('Error fetching availability for period:', error);
-            setAvailableCheckinDates([]);
+            return payload;
         } finally {
             setIsLoadingAvailability(false);
         }
     };
-
-
-
-
     const calculateAvailabilityPeriod = (date) => {
         console.log('🔍 Input date for calculation:', date); // ADD THIS
         const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
@@ -213,60 +212,59 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             key: `${startOfMonth.getFullYear()}-${startOfMonth.getMonth()}`
         };
     };
-    const isDateInLoadedPeriod = (date) => {
-        if (!currentAvailabilityStart || !currentAvailabilityEnd) return false;
-        return date >= currentAvailabilityStart && date <= currentAvailabilityEnd;
-    };
-
+    const isDateInLoadedPeriod = (date) => isInAnyLoadedSpan(date);
     // Function to check and load availability when user navigates calendar
     const checkAndLoadAvailabilityForDate = async (date) => {
         if (!isDateInLoadedPeriod(date)) {
             await fetchAvailabilityForPeriod(date);
         }
     };
-    const ROOMPOT_ARRIVAL_DATES = [
-        "26-09-2025","29-09-2025","03-10-2025","06-10-2025","10-10-2025","13-10-2025","17-10-2025","20-10-2025","24-10-2025","27-10-2025","31-10-2025","03-11-2025","07-11-2025","10-11-2025","14-11-2025","17-11-2025","21-11-2025","24-11-2025","28-11-2025","01-12-2025","05-12-2025","08-12-2025","12-12-2025","15-12-2025","19-12-2025","22-12-2025","24-12-2025","29-12-2025","02-01-2026","05-01-2026","09-01-2026","12-01-2026","16-01-2026","19-01-2026","23-01-2026","26-01-2026","30-01-2026","02-02-2026","06-02-2026","09-02-2026","13-02-2026","16-02-2026","20-02-2026","23-02-2026","27-02-2026","02-03-2026","06-03-2026","09-03-2026","13-03-2026","16-03-2026","20-03-2026","23-03-2026","27-03-2026","30-03-2026","03-04-2026","07-04-2026","10-04-2026","13-04-2026","17-04-2026","20-04-2026","24-04-2026","27-04-2026","30-04-2026","04-05-2026","08-05-2026","11-05-2026","13-05-2026","18-05-2026","22-05-2026","26-05-2026","29-05-2026","01-06-2026","03-06-2026","05-06-2026","08-06-2026","12-06-2026","15-06-2026","19-06-2026","22-06-2026","26-06-2026","29-06-2026","03-07-2026","06-07-2026","10-07-2026","13-07-2026","17-07-2026","20-07-2026","24-07-2026","27-07-2026","31-07-2026","03-08-2026","07-08-2026","10-08-2026","14-08-2026","17-08-2026","21-08-2026","24-08-2026","28-08-2026","31-08-2026","04-09-2026","07-09-2026","11-09-2026","14-09-2026","18-09-2026","21-09-2026","25-09-2026","28-09-2026","02-10-2026","05-10-2026","09-10-2026","12-10-2026","16-10-2026","19-10-2026","23-10-2026","26-10-2026","30-10-2026","02-11-2026","06-11-2026","09-11-2026","13-11-2026","16-11-2026","20-11-2026","23-11-2026","27-11-2026","30-11-2026","04-12-2026","07-12-2026","11-12-2026","14-12-2026","18-12-2026","23-12-2026","28-12-2026","31-12-2026","04-01-2027"
-    ].map(dateStr => {
-        const [day, month, year] = dateStr.split('-');
-        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    });
-    const isRoompotArrivalDay = (date) => {
-        return ROOMPOT_ARRIVAL_DATES.some(arrivalDate =>
-            isSameDay(arrivalDate, date)
-        );
-    };
+    // here is the new Roompot fetching from backend
+    // --- Roompot arrival days: fetch from YOUR backend ---
+    const [roompotArrivalDates, setRoompotArrivalDates] = useState([]);
 
-    const getNextArrivalDay = (fromDate) => {
-        return ROOMPOT_ARRIVAL_DATES.find(arrivalDate => arrivalDate > fromDate);
-    };
+// keep these IDs or take them from hotel data if you have them
+    const ROOMPOT_PARAMS = { resourceId: 26439855, objectId: 9023333 };
 
-    const handleMonthNavigation = async (focusedRange, preview) => {
-        if (preview && preview.startDate) {
-            await checkAndLoadAvailabilityForDate(preview.startDate);
+    async function fetchRoompotArrivalDays() {
+        try {
+            const qs = new URLSearchParams({
+                resourceId: String(ROOMPOT_PARAMS.resourceId),
+                objectId: String(ROOMPOT_PARAMS.objectId),
+            }).toString();
+
+            const res = await fetch(`http://localhost:8080/api/roompot/arrival-days?${qs}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const isoDates = await res.json(); // ["2025-09-26", ...]
+            // parse with date-fns to avoid off-by-one issues
+            const dates = isoDates.map(d => parseISO(d)).sort((a,b) => a - b);
+            setRoompotArrivalDates(dates);
+
+            console.log('[Roompot] loaded', dates.length, {
+                first: dates[0]?.toDateString(),
+                last:  dates.at(-1)?.toDateString()
+            });
+        } catch (e) {
+            console.error('[Roompot] failed to load', e);
+            setRoompotArrivalDates([]);
         }
-    };
-    const preloadNextPeriodIfNeeded = async (currentDate) => {
-        if (!currentAvailabilityEnd) return;
+    }
 
-        // If user is within 2 weeks of the end, preload next period
-        const twoWeeksBeforeEnd = new Date(currentAvailabilityEnd);
-        twoWeeksBeforeEnd.setDate(twoWeeksBeforeEnd.getDate() - 14);
+    useEffect(() => {
+        fetchRoompotArrivalDays();
+    }, []);
+    const isRoompotArrivalDay = (date) =>
+        roompotArrivalDates.some(d => isSameDay(d, date));
 
-        if (currentDate >= twoWeeksBeforeEnd) {
-            const nextPeriodStart = new Date(currentAvailabilityEnd);
-            nextPeriodStart.setDate(nextPeriodStart.getDate() + 1);
-
-            // Load next period in background
-            fetchAvailabilityForPeriod(nextPeriodStart);
-        }
-    };
+    const getNextArrivalDay = (fromDate) =>
+        roompotArrivalDates.find(d => d > fromDate);
 
     const fetchCheckoutDates = async (checkinDate) => {
-
         try {
             const checkin = format(checkinDate, 'yyyy-MM-dd');
             //  const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
-            const response = await fetch(`/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
+            const response = await fetch(`http://localhost:8080/api/hotels/${hotelId}/availability/checkout-dates?checkin=${checkin}`);
 
             if (!response.ok) {
                 console.log('No checkout dates available for this check-in');
@@ -282,7 +280,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             setAvailableCheckoutDates([]);
         }
     };
-
     const updateGuests = (type, increment) => {
         setGuests(prev => ({
             ...prev,
@@ -294,7 +291,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         if (!isValidDate(dateRange[0].startDate) || !isValidDate(dateRange[0].endDate)) return 0;
         return Math.ceil((dateRange[0].endDate - dateRange[0].startDate) / (1000 * 60 * 60 * 24));
     };
-
     // here I calculate the price of extras
     const calculateExtrasTotal = () => {
         let total = 0;
@@ -317,7 +313,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         const extrasTotal = calculateExtrasTotal();
         return basePrice + extrasTotal;
     };
-
     const formatGuestText = () => {
         const parts = [];
         if (guests.adults > 0) parts.push(`${guests.adults} Erwachsene`);
@@ -325,7 +320,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         if (guests.babies > 0) parts.push(`${guests.babies} Baby${guests.babies > 1 ? 's' : ''}`);
         return parts.join(', ') || '1 Gast';
     };
-
     const isDateUnavailable = (date) => {
         // Past dates are always unavailable
         const today = new Date();
@@ -333,13 +327,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         if (date < today) {
             return true;
         }
-
         // If date is outside loaded period, consider it unavailable
-        // (it will be loaded when user navigates to it)
         if (!isDateInLoadedPeriod(date)) {
             return true; // Will trigger loading when user navigates
         }
-
         // If we haven't selected a check-in yet
         if (!selectedCheckin) {
             // Only available check-in dates are selectable
@@ -349,105 +340,176 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             return !isAvailableCheckin;
         } else {
             // If we have selected a check-in
-            // The check-in date itself should remain available (for deselection)
             if (isSameDay(date, selectedCheckin)) {
                 return false;
             }
-
             // For checkout dates, check if it's in the available checkout dates
             const isAvailableCheckout = availableCheckoutDates.some(availableDate =>
                 isSameDay(availableDate, date)
             );
-
             // Dates before check-in are unavailable
             if (date <= selectedCheckin) {
                 return true;
             }
-
             // Return true if it's NOT an available checkout date
             return !isAvailableCheckout;
         }
     };
+    // NEW: track all successful fetch spans and a global maxDate for the picker
+    const [loadedSpans, setLoadedSpans] = useState([]);  // [{start:Date, end:Date}]
+    const [globalMaxDate, setGlobalMaxDate] = useState(null);
+    function addLoadedSpan(span) {
+        setLoadedSpans(prev => {
+            const next = [...prev, span];
+            // merge overlaps to keep it tiny
+            next.sort((a,b)=>a.start-b.start);
+            const merged = [];
+            for (const s of next) {
+                if (!merged.length || s.start > merged[merged.length-1].end) {
+                    merged.push({...s});
+                } else {
+                    merged[merged.length-1].end = new Date(Math.max(+merged[merged.length-1].end, +s.end));
+                }
+            }
+            return merged;
+        });
+    }
 
+    function recomputeGlobalMaxDate(spans) {
+        if (!spans.length) return;
+        const end = new Date(Math.max(...spans.map(s => +s.end)));
+        setGlobalMaxDate(end);
+    }
 
-    const getDisabledDates = () => {
-        const disabledDates = [];
-        const startDate = new Date();
-        const endDate = addDays(startDate, 90); // 3 months ≈ 90 daysRetryClaude can make mistakes. Please double-check responses.
+// NEW: date is inside *any* loaded span?
+    function isInAnyLoadedSpan(date) {
+        if (!loadedSpans.length) return false;
+        return loadedSpans.some(({start,end}) => date >= start && date <= end);
+    }
+    function recomputeCadencePaint() {
+        // Need roompot + at least one loaded span + at least one belvilla cache entry
+        const periods = Array.from(availabilityPeriods.values() || []);
+        if (!roompotArrivalDates.length || !loadedSpans.length || !periods.length) {
+            setCadenceOkDays(new Set());
+            setCadenceBadDays(new Set());
+            return;
+        }
 
-        for (let d = startDate; d <= endDate; d = addDays(d, 1)) {
-            if (isDateUnavailable(d)) {
-                disabledDates.push(d);
+        // Union of loaded window (min start … max end)
+        const start = new Date(Math.min(...loadedSpans.map(s => +s.start)));
+        const end   = new Date(Math.max(...loadedSpans.map(s => +s.end)));
+
+        // Don’t paint the past
+        const today0 = new Date(); today0.setHours(0,0,0,0);
+        const periodStart = start < today0 ? today0 : start;
+        const periodEnd   = end;
+
+        // Union of all Belvilla check-ins we’ve cached
+        const allBelvilla = new Set(
+            periods.flatMap(p => p.checkinDates).map(d => format(d, 'yyyy-MM-dd'))
+        );
+
+        // Roompot arrivals within the union window
+        const rp = roompotArrivalDates
+            .filter(d => d >= periodStart && d <= periodEnd)
+            .sort((a,b) => a - b);
+
+        const ok  = new Set();
+        const bad = new Set();
+        const toISO = (d) => format(d, 'yyyy-MM-dd');
+
+        if (rp.length) {
+            // everything before the first RP day → red
+            for (let d = new Date(periodStart); d < rp[0]; d = addDays(d, 1)) bad.add(toISO(d));
+
+            for (let i = 0; i < rp.length - 1; i++) {
+                const a = rp[i];
+                const b = rp[i + 1];
+                const diff = differenceInCalendarDays(b, a);
+
+                // only “pale green” if BOTH ends are Belvilla check-ins AND the gap is 3 or 4
+                const followsBelvilla =
+                    allBelvilla.has(toISO(a)) &&
+                    allBelvilla.has(toISO(b)) &&
+                    (diff === 3 || diff === 4);
+
+                for (let d = addDays(a, 1); d < b; d = addDays(d, 1)) {
+                    (followsBelvilla ? ok : bad).add(toISO(d));
+                }
             }
         }
 
-        return disabledDates;
-    };
+        setCadenceOkDays(ok);
+        setCadenceBadDays(bad);
+    }
 
+    useEffect(() => {
+            recomputeCadencePaint();
+        }, [roompotArrivalDates, availableCheckinDates, currentAvailabilityStart, currentAvailabilityEnd]);
 
     const customDayContent = (day) => {
+        const keyISO = format(day, 'yyyy-MM-dd');
+
+        // pre-painted by cadence rule:
+        let isNotArrival  = cadenceOkDays?.has?.(keyISO)  || false; // light green
+        let isNotBookable = cadenceBadDays?.has?.(keyISO) || false; // red
+
         const isCheckinDate  = selectedCheckin && isSameDay(day, selectedCheckin);
         const isCheckoutDate = dateRange[0].endDate && isSameDay(day, dateRange[0].endDate);
         const isToday        = isSameDay(day, new Date());
-        const isInRange =
-            selectedCheckin && dateRange[0].endDate && day > selectedCheckin && day < dateRange[0].endDate;
+        const isBelvillaCheckin = availableCheckinDates.some(d => isSameDay(d, day));
+        const isRoompotArrival  = isRoompotArrivalDay(day);
+        const isBelvillaOnly    = isBelvillaCheckin && !isRoompotArrival;
 
-        const isRoompotArrival   = isRoompotArrivalDay(day);
-        const isBelvillaCheckin  = availableCheckinDates.some(d => isSameDay(d, day));
-        const isBelvillaOnly     = isBelvillaCheckin && !isRoompotArrival;
 
-        let isNotArrival = false;   // light green, unclickable
-        let isNotBookable = false;  // pink, unclickable
+        const today0 = new Date(); today0.setHours(0, 0, 0, 0);
 
-        // Past dates → block
-        const today = new Date(); today.setHours(0,0,0,0);
-        if (day < today) {
-            isNotBookable = false;          // <- was false
+        if (day < today0) {
+            isNotArrival = false;
+            isNotBookable = false;
         } else if (!isDateInLoadedPeriod(day)) {
+            // outside loaded period → blocked
             isNotBookable = true;
         } else {
-            if (isBelvillaOnly) {
-                isNotArrival = true;
-            } else if (isRoompotArrival) {
-                // keep clickable
-            } else if (selectedCheckin && isRoompotArrivalDay(selectedCheckin)) {
-                // between selected Roompot arrival and the next Roompot arrival → green & unclickable
-                const nextArrival = getNextArrivalDay(selectedCheckin);
-                const isBetween =
-                    day > selectedCheckin &&
-                    (nextArrival ? day < nextArrival : day <= addDays(selectedCheckin, 14));
+            // only run legacy logic if cadence didn't already paint this cell
+            if (!isNotArrival && !isNotBookable) {
+                if (isBelvillaOnly) {
+                    // belvilla check-in that’s not a roompot arrival → pale green
+                    isNotArrival = true;
+                } else if (isRoompotArrival) {
+                    // clickable (dark green); nothing to do
+                } else if (selectedCheckin && isRoompotArrivalDay(selectedCheckin)) {
+                    // if a roompot arrival is selected, the window until the next arrival is pale green
+                    const nextArrival = getNextArrivalDay(selectedCheckin);
+                    const inWindow =
+                        day > selectedCheckin &&
+                        (nextArrival ? day < nextArrival : day <= addDays(selectedCheckin, 14));
 
-                if (isBetween) {
-                    isNotArrival = true;        // <-- key change: use the unclickable green state
+                    if (inWindow) {
+                        isNotArrival = true;
+                    } else {
+                        const okFromBackend = availableCheckoutDates.some(d => isSameDay(d, day));
+                        if (!okFromBackend) isNotBookable = true;
+                    }
                 } else {
-                    // anything else after Roompot check-in that backend didn't allow → block
                     const okFromBackend = availableCheckoutDates.some(d => isSameDay(d, day));
                     if (!okFromBackend) isNotBookable = true;
                 }
-            } else {
-                // Belvilla check-in selected → only backend-approved checkouts are clickable
-                const okFromBackend = availableCheckoutDates.some(d => isSameDay(d, day));
-                if (!okFromBackend) isNotBookable = true;
             }
         }
 
-        // Shield to catch pointer events on unclickable days (works even if :has() isn't supported)
+        // block interaction on red / pale-green cells
         const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
 
         return (
-            <div
-                className={`
-        relative w-full h-full flex items-center justify-center
-        ${isInRange ? 'in-range-day' : ''}
-        ${isCheckinDate || isCheckoutDate ? 'selected-day' : ''}
-        ${isNotArrival ? 'not-arrival-day' : ''}
-        ${isNotBookable ? 'not-bookable-day' : ''}
-        ${isRoompotArrival ? 'roompot-arrival-day' : ''}
-      `}
-                role="presentation"
-            >
+            <>
+                {isRoompotArrival  && <span className="flag-roompot" aria-hidden="true" />}
+                {isNotArrival      && <span className="flag-not-arrival" aria-hidden="true" />}
+                {isNotBookable     && <span className="flag-not-bookable" aria-hidden="true" />}
+                {isCheckinDate     && <span className="flag-start" aria-hidden="true" />}
+                {isCheckoutDate    && <span className="flag-end" aria-hidden="true" />}
                 {(isNotArrival || isNotBookable) && (
-                    <div
+                    <span
                         className="absolute inset-0 z-10"
                         onPointerDown={stop}
                         onMouseDown={stop}
@@ -456,14 +518,13 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                         aria-hidden="true"
                     />
                 )}
-                <span className={`${isNotBookable ? 'text-gray-400' : 'text-gray-900'} ${isToday ? 'font-bold' : ''} ${(isCheckinDate || isCheckoutDate) ? 'text-white font-bold' : ''}`}>
+
+                <span className={`${isNotBookable ? 'text-gray-400' : 'text-gray-900'} ${isToday ? 'font-bold' : ''}`}>
         {format(day, 'd')}
       </span>
-            </div>
+            </>
         );
     };
-
-
 
     const handleDateChange = async (item) => {
         const newStartDate = item.selection.startDate;
@@ -516,33 +577,22 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                 requestAnimationFrame(() => {
                     setDateRange([{ startDate: selectedCheckin, endDate: newEndDate, key: 'selection' }]);
                 });
-
             }
-
-
-
         }
     };
     const handleReservation = () => {
         // Format dates for URL (DD/MM/YYYY format for European sites)
         const checkinFormatted = format(dateRange[0].startDate, 'dd/MM/yyyy');  // ← Changed this
         const checkoutFormatted = format(dateRange[0].endDate, 'dd/MM/yyyy');   // ← Changed this
-
-        // Calculate total guests (excluding pets for booking)
         const totalGuests = guests.adults + guests.children + guests.babies;
-
         // Encode dates for URL
         const checkinEncoded = encodeURIComponent(checkinFormatted);
         const checkoutEncoded = encodeURIComponent(checkoutFormatted);
-
         // Build dynamic URL
-        const belvilla_url = `https://nl.belvilla.be/be/${hotelId}/?checkin=${checkinEncoded}&checkout=${checkoutEncoded}&flexibleDaysCount=3&guests=${totalGuests}&rooms=1&rooms_config=1-${totalGuests}&selected_rcid=1`;
-
+        const belvillaUrl = `https://www.belvilla.de/be/${hotelId}/?checkin=${checkinEncoded}&checkout=${checkoutEncoded}&flexibleDaysCount=3&guests=${totalGuests}&modal=bookingSummary&rooms=1&rooms_config=1-${totalGuests}&selected_rcid=1`;
         // Redirect to Belvilla
-        window.open(belvilla_url, '_blank');
+        window.open(belvillaUrl, '_blank');
     };
-
-
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -550,12 +600,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             </div>
         );
     }
-
     return (
         <div className="min-h-screen bg-white">
             {/* Header  Starting */}
-
-
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Hotel Title */}
                 <div className="mb-8">
@@ -611,7 +658,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 rounded-xl overflow-hidden">
                         <div className="relative md:row-span-2">
                             <img
-                                src={images[currentImageIndex] || '/api/placeholder/600/400'}
+                                src={images[currentImageIndex] || 'http://localhost:8080/api/placeholder/600/400'}
                                 alt="Hotel main view"
                                 className="w-full h-96 md:h-full object-cover cursor-pointer hover:brightness-105 transition-all"
                                 onClick={() => setCurrentImageIndex(0)}
@@ -994,27 +1041,39 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                 <div className="calendar-wrapper">
                                                     <div className="airbnb-calendar-container">
                                                         <DateRangePicker
+                                                            locale={de}
                                                             ranges={pickerRanges}
-                                                            rangeColors={hasRealRange ? ['#00BB77'] : ['transparent']}
+                                                            rangeColors={['transparent']}
                                                             moveRangeOnFirstSelection={false}
                                                             onChange={handleDateChange}
-                                                            onShownDateChange={(shownDate) => {
-                                                                console.log('📅 Month changed to:', shownDate);
-                                                                if (shownDate) {
-                                                                    checkAndLoadAvailabilityForDate(shownDate);
-                                                                }
+
+                                                            // NEW: make the visible month controlled
+                                                            shownDate={leftMonth}
+                                                            onShownDateChange={(d) => {
+                                                                // Normalize to the first of the month
+                                                                const left = new Date(d.getFullYear(), d.getMonth(), 1);
+                                                                setLeftMonth(left);
+
+                                                                // keep your lazy-loading logic in sync for both months
+                                                                checkAndLoadAvailabilityForDate(left); // left month
+                                                                const right = new Date(left.getFullYear(), left.getMonth() + 1, 1);
+                                                                checkAndLoadAvailabilityForDate(right); // right month
                                                             }}
-                                                            showSelectionPreview={true}
-                                                            months={1}
+
+                                                            showSelectionPreview={false}
+                                                            months={2}
                                                             direction="horizontal"
-                                                            minDate={new Date()}
+
+                                                            // Use the stable "today"
+                                                            minDate={todayRef.current}
+
                                                             disabledDay={(date) => {
-                                                                const today = new Date();
-                                                                today.setHours(0, 0, 0, 0);
-                                                                if (date < today) return true;
+                                                                const t = todayRef.current;
+                                                                if (date < t) return true;
                                                                 if (!isDateInLoadedPeriod(date)) return true;
                                                                 return false;
                                                             }}
+
                                                             dayContentRenderer={customDayContent}
                                                             monthDisplayFormat="MMMM yyyy"
                                                             staticRanges={[]}
@@ -1023,6 +1082,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                             calendarFocus="forwards"
                                                             weekStartsOn={1}
                                                         />
+
 
 
                                                     </div>
@@ -1066,10 +1126,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
   color: #fff !important;
   border: 2px solid #16a34a !important;
   font-weight: 700 !important;
-}
-.airbnb-calendar-container .roompot-arrival-day:hover {
-  background: #16a34a !important;
-  transform: scale(1.02) !important; /* slightly reduced for smoother hover */
 }
 
 /* Checkout window (kept clickable) */
@@ -1143,17 +1199,18 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
   max-width: calc(100vw - 2rem) !important;
   z-index: 99999 !important;
   animation: slideUp .4s cubic-bezier(.34,1.56,.64,1) !important;
+   
 }
 .modal-content {
   background: linear-gradient(135deg,#fff,#fafafa) !important;
-  border-radius: 20px !important;
+  border-radius: 14px !important;
   box-shadow:
     0 25px 50px -12px rgba(0,0,0,.25),
     0 0 0 1px rgba(255,255,255,.8),
     inset 0 1px 0 rgba(255,255,255,.9) !important;
   border: 1px solid rgba(255,255,255,.2) !important;
   padding: 0 !important;
-  padding-top: 5rem !important;
+  padding-top: .10rem !important;
   max-width: fit-content !important;
   width: fit-content !important;
   max-height: 85vh !important;
@@ -1189,8 +1246,8 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  margin-bottom: 1.5rem !important;
-  padding: 0 2rem 1.5rem !important;
+  margin-bottom: 8px !important;
+  padding: 0 2rem 1.5rem !important;    
   border-bottom: 1px solid rgba(0,0,0,.08) !important;
   background: linear-gradient(90deg, rgba(92,230,92,.05), rgba(0,154,0,.05)) !important;
 }
@@ -1200,7 +1257,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
   font-size: .95rem !important;
 }
 .modal-instruction {
-  margin: 0 2rem 1.5rem !important;
+  margin: 8px 16px 12px !important;
   padding: 1rem 1.25rem !important;
   border-radius: 12px !important;
   font-size: .9rem !important;
@@ -1235,6 +1292,8 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
   justify-content: center !important;
   margin: 0 auto !important;
   padding: 0 1rem !important;
+  margin-top: 4px !important;
+  padding-top: 4px !important;
 }
 
 /* Footer */
@@ -1356,12 +1415,6 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
   width: 0 !important; height: 0 !important; background: rgba(92,230,92,.1) !important; border-radius: 50% !important;
   transition: all .3s ease !important; transform: translate(-50%,-50%) !important;
 }
-.airbnb-calendar-container .rdrNextPrevButton:hover::before { width: 100% !important; height: 100% !important; }
-.airbnb-calendar-container .rdrNextPrevButton:hover {
-  background: linear-gradient(135deg,#f0fdf4,#dcfce7) !important;
-  border-color: #5CE65C !important; transform: scale(1.1) !important;
-  box-shadow: 0 4px 12px rgba(92,230,92,.25) !important;
-}
 
 /* Week header */
 .airbnb-calendar-container .rdrWeekDays {
@@ -1395,14 +1448,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
   width: 0 !important; height: 0 !important; background: rgba(92,230,92,.1) !important; border-radius: 50% !important;
   transition: all .3s ease !important; transform: translate(-50%,-50%) !important; z-index: 0 !important;
 }
-.airbnb-calendar-container .rdrDay:hover::before { width: 120% !important; height: 120% !important; }
-.airbnb-calendar-container .rdrDay:hover {
-  background: rgba(255,255,255,.95) !important;
-  transform: scale(1.02) translateY(-0.5px) !important;
-  box-shadow: 0 2px 6px rgba(0,0,0,.10) !important;
-  border-color: rgba(92,230,92,.3) !important;
-  color: #166534 !important;
-}
+
 .airbnb-calendar-container .rdrDay:active { transform: scale(.95) !important; transition: transform .1s ease !important; }
 
 /* Day number */
@@ -1415,9 +1461,8 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
 /* Today */
 .airbnb-calendar-container .rdrDayToday {
-  background: linear-gradient(135deg,#fef3c7,#fde68a) !important;
-  border: 2px solid #f59e0b !important;
-  box-shadow: 0 0 0 3px rgba(245,158,11,.2) !important;
+  background: rgba(245,255,245,.8) !important;
+  border: 2px solid transparent !important;
 }
 .airbnb-calendar-container .rdrDayToday .rdrDayNumber { font-weight: 700 !important; color: #92400e !important; }
 .airbnb-calendar-container .rdrDayToday .rdrDayNumber:after { display: none !important; }
@@ -1435,7 +1480,8 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 .airbnb-calendar-container .rdrDayEndEdge,
 .airbnb-calendar-container .rdrDayEndEdge.rdrDayActive {
   background: linear-gradient(135deg,#5CE65C,#009A00) !important;
-  color: #fff !important; border: 2px solid #009A00 !important;
+   
+  border: 2px solid #009A00 !important;
   box-shadow: 0 4px 15px rgba(92,230,92,.4), 0 0 0 3px rgba(92,230,92,.2) !important;
   transform: scale(1.05) !important;
 }
@@ -1453,25 +1499,49 @@ color: inherit !important;
 }
 .airbnb-calendar-container .rdrDayInRange .rdrDayNumber { color: #166534 !important; font-weight: 600 !important; }
 
-/* Disabled */
+/* Disabled (past) days — darker number, softer slash */
+   
 .airbnb-calendar-container .rdrDayDisabled {
-  color: #303030 !important; cursor: not-allowed !important; position: relative !important;
-  background: linear-gradient(135deg,#f9fafb,#f3f4f6) !important;
-  border: 1px solid #e5e7eb !important; opacity: .6 !important; pointer-events: none !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+  opacity: .9 !important;                 /* darker numbers */
 }
+
+.airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
+  background: linear-gradient(135deg,#f9fafb,#f3f4f6) !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;          /* match other pills */
+  color: #0f172a !important;              /* near-black */
+  box-shadow: none !important;
+}
+
+/* Kill any built-in markers from the library */
 .airbnb-calendar-container .rdrDayDisabled::before,
-.airbnb-calendar-container .rdrDayDisabled .rdrDayNumber:after { display: none !important; }
-.airbnb-calendar-container .rdrDayDisabled::after {
-  content: '' !important; position: absolute !important; top: 50% !important; left: 50% !important;
-  width: 1.5rem !important; height: .125rem !important; background: #2b2b2b !important;
-  transform: translate(-50%, -50%) rotate(45deg) !important; pointer-events: none !important; z-index: 2 !important; border-radius: 1px !important;
+.airbnb-calendar-container .rdrDayDisabled::after,
+.airbnb-calendar-container .rdrDayDisabled .rdrDayNumber::before,
+.airbnb-calendar-container .rdrDayDisabled .rdrDayNumber::after {
+  content: none !important;
+  display: none !important;
 }
-.airbnb-calendar-container .rdrDayDisabled.rdrDayActive,
-.airbnb-calendar-container .rdrDayDisabled.rdrDayStartEdge,
-.airbnb-calendar-container .rdrDayDisabled.rdrDayEndEdge,
-.airbnb-calendar-container .rdrDayDisabled.rdrDayInRange {
-  background: linear-gradient(135deg,#f9fafb,#f3f4f6) !important;
-  color: #d1d5db !important; border: 1px solid #e5e7eb !important; box-shadow: none !important; transform: none !important;
+
+airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
+  position: relative !important; /* anchor the tick */
+}
+
+.airbnb-calendar-container .rdrDayDisabled .rdrDayNumber::after {
+  content: "" !important;
+  display: block !important;              /* override any display:none */
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 68% !important;                  /* proportional so it scales */
+  height: 1.12px !important;                 /* thin line */
+  background: rgba(55, 65, 81, 0.78) !important; /* slightly darker */
+  transform: translate(-50%, -50%) rotate(45deg) !important;
+  border-radius: 2px !important;
+  pointer-events: none !important;
 }
 
 /* Month name */
@@ -1499,10 +1569,10 @@ color: inherit !important;
   .modal-container {
     left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important;
     padding: .5rem !important; width: calc(100vw - 1rem) !important; max-width: calc(100vw - 1rem) !important;
-    height: auto !important; max-height: calc(100vh - 1rem) !important;
+    height: auto !important; max-height: calc(100vh - 1rem) !important; 
   }
   .modal-content {
-    padding: 0 !important; padding-top: 3rem !important; margin: 0 !important; width: 100% !important; max-width: 100% !important;
+    padding: 0 !important; padding-top: 0 !important; margin: 0 !important; width: 100% !important; max-width: 100% !important;
     border-radius: 12px !important; max-height: calc(100vh - 1rem) !important; overflow-y: auto !important; display: flex !important; flex-direction: column !important;
   }
   .modal-close-btn { top: .75rem !important; right: .75rem !important; padding: .5rem !important; width: 2rem !important; height: 2rem !important; z-index: 1000 !important; }
@@ -1533,17 +1603,22 @@ color: inherit !important;
     width: 100% !important; height: 2.25rem !important; margin: 0 !important; padding: 0 !important; display: flex !important; align-items: center !important;
     justify-content: center !important; box-sizing: border-box !important; border-radius: 6px !important;
   }
-  .airbnb-calendar-container .rdrDay span {
-    width: calc(100% - 4px) !important; height: calc(100% - 4px) !important; display: flex !important; align-items: center !important; justify-content: center !important; margin: 2px !important;
-  }
-  .airbnb-calendar-container .rdrDayNumber { font-size: .75rem !important; }
+  
+  .airbnb-calendar-container .rdrDay .rdrDayNumber{
+    width: calc(100% - 4px) !important;
+    height: calc(100% - 4px) !important;
+    margin: 2px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  } 
   .airbnb-calendar-container .rdrCalendarWrapper { width: 100% !important; box-sizing: border-box !important; min-width: 260px !important; }
   .airbnb-calendar-container .rdrDays { display: grid !important; grid-template-columns: repeat(7,1fr) !important; gap: .125rem !important; width: 100% !important; box-sizing: border-box !important; }
 }
 
 @media (max-width: 480px) {
   .modal-container { padding: .25rem !important; width: calc(100vw - .5rem) !important; max-width: calc(100vw - .5rem) !important; max-height: calc(100vh - .5rem) !important; }
-  .modal-content { padding-top: 2.5rem !important; border-radius: 8px !important; max-height: calc(100vh - .5rem) !important; }
+  .modal-content { padding-top: .25rem !important; border-radius: 8px !important; max-height: calc(100vh - .5rem) !important; }
   .modal-close-btn { top: .5rem !important; right: .5rem !important; padding: .375rem !important; width: 1.75rem !important; height: 1.75rem !important; }
   .modal-header { padding: 0 .75rem .5rem .75rem !important; font-size: .813rem !important; }
   .modal-instruction { margin: 0 .75rem .5rem .75rem !important; padding: .5rem !important; font-size: .75rem !important; }
@@ -1602,7 +1677,6 @@ color: inherit !important;
 
 /* Motion + color scheme */
 @media (prefers-reduced-motion: reduce) {
-  .airbnb-calendar-container .rdrDay:hover { transform: none !important; }
   .modal-overlay, .modal-container, .close-btn, .reset-btn { animation: none !important; transition: none !important; }
 }
 @media (prefers-color-scheme: dark) {
@@ -1627,12 +1701,7 @@ color: inherit !important;
   }
   .rdrDayInRange.rdrDayDisabled .rdrDayNumber { color: #9ca3af !important; text-decoration: line-through !important; }
 }
-/* Make out-of-month cells clickable again */
-.airbnb-calendar-container .rdrDay.rdrDayPassive,
-.airbnb-calendar-container .rdrDay.rdrDayPassive * {
-  pointer-events: auto !important;
-  cursor: pointer !important;
-}
+
 
 /* Optional: don’t fade the number on passive days */
 .airbnb-calendar-container .rdrDay.rdrDayPassive .rdrDayNumber,
@@ -1640,6 +1709,292 @@ color: inherit !important;
   opacity: 1 !important;
   color: inherit !important;
 }
+/* --- Make the library's day box adopt the state styles via :has(flags) --- */
+/* One block to handle states + hover + cross-month range correctly */
+@supports selector(.rdrDay:has(*)) {
+  /* Make passive cells clickable (needed for 03.10 in the left month) */
+  .airbnb-calendar-container .rdrDay.rdrDayPassive,
+  .airbnb-calendar-container .rdrDay.rdrDayPassive * {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+  }
+
+  /* Kill library hover everywhere… */
+  .airbnb-calendar-container .rdrDayHovered,
+  .airbnb-calendar-container .rdrDay:hover {
+    background: inherit !important;
+    border-color: inherit !important;
+    box-shadow: none !important;
+    transform: none !important;
+    color: inherit !important;
+  }
+
+  /* …and hard-disable red & light-green days (no hover, no click) */
+  .airbnb-calendar-container .rdrDay:has(.flag-not-bookable),
+  .airbnb-calendar-container .rdrDay:has(.flag-not-arrival) {
+    pointer-events: none !important;
+    cursor: not-allowed !important;
+  }
+
+  /* Allow a subtle hover ONLY on truly clickable days (incl. passive) */
+  .airbnb-calendar-container .rdrDay:not(.rdrDayDisabled):has(.flag-roompot):hover,
+  .airbnb-calendar-container .rdrDay:not(.rdrDayDisabled):has(.flag-start):hover,
+  .airbnb-calendar-container .rdrDay:not(.rdrDayDisabled):has(.flag-end):hover {
+    background: rgba(22,163,74,.10) !important;
+    border-color: #16a34a !important;
+  }
+
+  /* Paint cross-month range parts that the library doesn't paint */
+  
+
+  /* Start / End edges when the lib didn't set them (e.g., passive cells) */
+  /* Start/End — subtle, neutral ring; no fill, keep number color */
+.airbnb-calendar-container .rdrDay:not(.rdrDayStartEdge):has(.flag-start),
+.airbnb-calendar-container .rdrDay:not(.rdrDayEndEdge):has(.flag-end) {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: inset 0 0 0 2px #cbd5e1 !important; /* slate-300 */
+  border-radius: 10px !important;
+}
+
+.airbnb-calendar-container .rdrDay:not(.rdrDayStartEdge):has(.flag-start) .rdrDayNumber,
+.airbnb-calendar-container .rdrDay:not(.rdrDayEndEdge):has(.flag-end) .rdrDayNumber {
+  color: inherit !important;
+  font-weight: 600 !important;
+}
+
+  .airbnb-calendar-container .rdrDay:not(.rdrDayStartEdge):has(.flag-start) .rdrDayNumber,
+  .airbnb-calendar-container .rdrDay:not(.rdrDayEndEdge):has(.flag-end) .rdrDayNumber {
+    font-weight: 700 !important;
+  }
+
+  /* Number-level pills for your state flags (keep your look) */
+  .airbnb-calendar-container .rdrDayNumber:has(.flag-roompot) {
+    background: #22c55e !important;
+    
+    border: 2px solid #16a34a !important;
+    font-weight: 500 !important;
+    border-radius: 8px !important;
+  }
+  .airbnb-calendar-container .rdrDayNumber:has(.flag-not-arrival) {
+    background: rgba(34,197,94,.15) !important;
+    
+    border: 1px solid rgba(34,197,94,.5) !important;
+    border-radius: 8px !important;
+  }
+  .airbnb-calendar-container .rdrDayNumber:has(.flag-not-bookable) {
+    background: rgba(244,143,177,.4) !important;
+    border: 1px solid rgba(244,143,177,.6) !important;
+    color: #111827 !important;
+    border-radius: 8px !important;
+  }
+}
+
+
+/* Fallback if :has is not supported: keep your overlay shield (already in JSX) */
+
+/* Ensure our day boxes don't get odd padding from a custom wrapper */
+.airbnb-calendar-container .rdrDayNumber {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+
+/* Hide the first week of the RIGHT month if it’s a padded (passive) week.
+   That removes the duplicate “overlap week” so the right month starts cleanly. */
+
+
+
+/* passive (out-of-month) cells must be clickable */
+.airbnb-calendar-container .rdrDay.rdrDayPassive,
+.airbnb-calendar-container .rdrDay.rdrDayPassive * {
+  pointer-events: none !important;
+    cursor: default !important;
+}
+.airbnb-calendar-container .rdrDay.rdrDayPassive:has(.flag-roompot),
+  .airbnb-calendar-container .rdrDay.rdrDayPassive:has(.flag-inrange) {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+  }
+/* Default: NO visual hover anywhere */
+.airbnb-calendar-container .rdrDayHovered,
+.airbnb-calendar-container .rdrDay:hover {
+  background: inherit !important;
+  border-color: inherit !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  transform: none !important;
+}
+
+@supports selector(:has(*)) {
+  .airbnb-calendar-container .rdrDay:has(.flag-not-bookable):hover,
+  .airbnb-calendar-container .rdrDay:has(.flag-not-bookable).rdrDayHovered {
+    background: rgba(244,143,177,.4) !important;
+    border: 1px solid rgba(244,143,177,.6) !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    cursor: not-allowed !important;
+  }
+
+  .airbnb-calendar-container .rdrDay:has(.flag-not-arrival):hover,
+  .airbnb-calendar-container .rdrDay:has(.flag-not-arrival).rdrDayHovered {
+    background: rgba(34,197,94,.15) !important;
+    border: 1px solid rgba(34,197,94,.5) !important;
+    color: #15803d !important;
+    box-shadow: none !important;
+    transform: none !important;
+    cursor: not-allowed !important;
+  }
+}
+.airbnb-calendar-container .rdrDay:hover::before { width: 0 !important; height: 0 !important; }
+/* Re-enable hover ONLY for clickable days (have arrival flag, not red/pale green) */
+@supports selector(:has(*)) {
+  .airbnb-calendar-container
+    .rdrDay:not(.rdrDayDisabled):not(.rdrDayPassive)
+    :is(:has(.flag-roompot))
+    :not(:has(.flag-not-arrival))
+    :not(:has(.flag-not-bookable))
+    .rdrDayNumber:hover {
+      background: #16a34a !important;
+      border: 2px solid #15803d !important;
+      color: #fff !important;
+      transform: scale(1.02) !important;
+  }
+}
+
+/* --- NO PERSISTENT RANGE FILL --- */
+.airbnb-calendar-container .rdrDayInRange,
+.airbnb-calendar-container .rdrDayInPreview,
+.airbnb-calendar-container .rdrDayStartPreview,
+.airbnb-calendar-container .rdrDayEndPreview {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* --- neutralize library number colors on selected/in-range/preview --- */
+.airbnb-calendar-container .rdrDayNumber > span {
+  color: currentColor !important;        /* always inherit from the cell */
+}
+
+.airbnb-calendar-container
+  .rdrDayStartEdge .rdrDayNumber > span,
+.airbnb-calendar-container
+  .rdrDayEndEdge .rdrDayNumber > span,
+.airbnb-calendar-container
+  .rdrDayInRange .rdrDayNumber > span,
+.airbnb-calendar-container
+  .rdrDayStartPreview .rdrDayNumber > span,
+.airbnb-calendar-container
+  .rdrDayEndPreview .rdrDayNumber > span,
+.airbnb-calendar-container
+  .rdrDayInPreview .rdrDayNumber > span {
+  color: currentColor !important;        /* kill the forced white */
+}
+
+/* kill any remaining “range look” (bg/border/text) */
+.airbnb-calendar-container .rdrDayInRange,
+.airbnb-calendar-container .rdrDayStartPreview,
+.airbnb-calendar-container .rdrDayEndPreview,
+.airbnb-calendar-container .rdrDayInPreview {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: inherit !important;             /* don’t tint numbers green */
+}
+
+/* ---- lighter scrollbar just inside the calendar modal ---- */
+:root{
+  --sb-thumb: #e5e7eb;        /* light (slate-200) */
+  --sb-thumb-hover: #cbd5e1;  /* a touch darker on hover */
+}
+
+/* apply to whichever element actually scrolls (you can keep both) */
+.modal-content,
+.modal-portal {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb) transparent;
+}
+
+/* Chrome/Edge/Safari */
+.modal-content::-webkit-scrollbar,
+.modal-portal::-webkit-scrollbar {
+  width: 8px;
+}
+.modal-content::-webkit-scrollbar-track,
+.modal-portal::-webkit-scrollbar-track {
+  background: transparent;        /* removes that big grey gutter */
+  margin: 8px 0;                   /* keep the thumb off rounded corners */
+}
+.modal-content::-webkit-scrollbar-thumb,
+.modal-portal::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;  /* gives a lighter look by shrinking the thumb */
+  background-clip: padding-box;
+}
+.modal-content::-webkit-scrollbar-thumb:hover,
+.modal-portal::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-thumb-hover);
+}
+/* hide the tiny triangle buttons at top/bottom */
+.modal-content::-webkit-scrollbar-button,
+.modal-portal::-webkit-scrollbar-button {
+  height: 0;
+  display: none;
+}
+/* no corner block */
+.modal-content::-webkit-scrollbar-corner,
+.modal-portal::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Remove the white underline/dot under day numbers */
+.airbnb-calendar-container .rdrDayNumber > span::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* make passive (other-month) cells blank & non-interactive */
+.airbnb-calendar-container .rdrDay.rdrDayPassive {
+  background: transparent !important;   /* <-- removes the pale green */
+  border: 0 !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+  cursor: default !important;
+}
+.airbnb-calendar-container .rdrDay.rdrDayPassive .rdrDayNumber {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.airbnb-calendar-container .rdrDay.rdrDayPassive .rdrDayNumber > span {
+  visibility: hidden !important;        /* hide the number */
+}
+
+/* don’t let container-level :has rules repaint passive cells */
+@supports selector(.rdrDay:has(*)) {
+  .airbnb-calendar-container .rdrDay.rdrDayPassive:has(.flag-roompot),
+  .airbnb-calendar-container .rdrDay.rdrDayPassive:has(.flag-not-arrival),
+  .airbnb-calendar-container .rdrDay.rdrDayPassive:has(.flag-not-bookable) {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+}
+/* --- Removing the base green tint under day cells --- */
+.airbnb-calendar-container .rdrDay,
+.airbnb-calendar-container .rdrDayToday {
+  background: transparent !important;
+}
+/* Kill any leftover ripple background */
+.airbnb-calendar-container .rdrDay::before {
+  background: transparent !important;
+}
+
+
 
 
             
@@ -1743,8 +2098,6 @@ color: inherit !important;
                                         );
                                     })()}
                                 </div>
-
-
 
                                 {/* Reserve Button */}
                                 {(() => {
