@@ -28,6 +28,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         towels: false,
         pets: false
     });
+    const MAX_NIGHTS = 21;
     const [showExtrasPicker, setShowExtrasPicker] = useState(false);
     const [availabilityPeriods, setAvailabilityPeriods] = useState(new Map()); // Cache for different periods
     const [currentAvailabilityStart, setCurrentAvailabilityStart] = useState(null);
@@ -273,8 +274,14 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             }
 
             const checkoutDates = await response.json();
-            setAvailableCheckoutDates(checkoutDates.map(date => new Date(date)));
-            setSelectedCheckin(checkinDate);
+            //setAvailableCheckoutDates(checkoutDates.map(date => new Date(date)));
+            const maxCheckout = addDays(checkinDate, MAX_NIGHTS);
+              const filtered = checkoutDates
+                 .map(d => new Date(d))
+                .filter(d => d > checkinDate && d <= maxCheckout);
+                setAvailableCheckoutDates(filtered);
+
+                setSelectedCheckin(checkinDate);
         } catch (error) {
             console.error('Error fetching checkout dates:', error);
             setAvailableCheckoutDates([]);
@@ -528,25 +535,17 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
     const handleDateChange = async (item) => {
         const newStartDate = item.selection.startDate;
-        const newEndDate = item.selection.endDate;
+        const newEndDate   = item.selection.endDate;
 
-        // If selecting a check-in date (no check-in selected yet or selecting a new one)
         if (!selectedCheckin || newStartDate.getTime() !== selectedCheckin.getTime()) {
-            // Fetch valid checkout dates for this check-in
             await fetchCheckoutDates(newStartDate);
             setSelectedCheckin(newStartDate);
-
-            // Set just the start date initially
-            setDateRange([{
-                startDate: newStartDate,
-                endDate: newStartDate,
-                key: 'selection'
-            }]);
+            setDateRange([{ startDate: newStartDate, endDate: newStartDate, key: 'selection' }]);
         } else {
-            // We're selecting a checkout date
-            // Check if this specific checkout date is available
-            // We're selecting a checkout date
-            // Accept either backend-provided checkouts OR a valid Roompot window day
+             // hard cap: max 21 nights
+                  const nights = differenceInCalendarDays(newEndDate, selectedCheckin);
+                if (nights <= 0 || nights > MAX_NIGHTS) return;
+
             const isValidCheckoutFromBackend = availableCheckoutDates.some(date =>
                 isSameDay(date, newEndDate)
             );
@@ -557,29 +556,27 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                 (() => {
                     const nextArrivalDay = getNextArrivalDay(selectedCheckin);
                     if (nextArrivalDay) {
-                        return newEndDate > selectedCheckin && newEndDate < nextArrivalDay;
+                                return newEndDate > selectedCheckin && newEndDate < nextArrivalDay;
+                                 return newEndDate > selectedCheckin &&
+                                            newEndDate < nextArrivalDay &&
+                                            differenceInCalendarDays(newEndDate, selectedCheckin) <= MAX_NIGHTS;
                     }
-                    const maxCheckoutDate = new Date(selectedCheckin);
-                    maxCheckoutDate.setDate(maxCheckoutDate.getDate() + 14);
-                    return newEndDate > selectedCheckin && newEndDate <= maxCheckoutDate;
+                           const maxCheckoutDate = addDays(selectedCheckin, Math.min(14, MAX_NIGHTS));
+                          return newEndDate > selectedCheckin && newEndDate <= maxCheckoutDate;
                 })();
 
-            const isValidCheckout = (isValidCheckoutFromBackend || isValidRoompotCheckout) && (newEndDate > selectedCheckin);
+            const isValidCheckout = (isValidCheckoutFromBackend || isValidRoompotCheckout)
+                && (newEndDate > selectedCheckin);
 
             if (isValidCheckout) {
-                setDateRange([{
-                    startDate: selectedCheckin,
-                    endDate: newEndDate,
-                    key: 'selection'
-                }]);
-
-                // Force a re-render to ensure styles are applied
+                setDateRange([{ startDate: selectedCheckin, endDate: newEndDate, key: 'selection' }]);
                 requestAnimationFrame(() => {
                     setDateRange([{ startDate: selectedCheckin, endDate: newEndDate, key: 'selection' }]);
                 });
             }
         }
     };
+
     const handleReservation = () => {
         // Format dates for URL (DD/MM/YYYY format for European sites)
         const checkinFormatted = format(dateRange[0].startDate, 'dd/MM/yyyy');  // ← Changed this
@@ -1071,6 +1068,10 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                                 const t = todayRef.current;
                                                                 if (date < t) return true;
                                                                 if (!isDateInLoadedPeriod(date)) return true;
+                                                                if (selectedCheckin) {
+                                                                         const maxCheckout = addDays(selectedCheckin, MAX_NIGHTS);
+                                                                         if (date > maxCheckout) return true;
+                                                                       }
                                                                 return false;
                                                             }}
 
@@ -1994,11 +1995,29 @@ airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
   background: transparent !important;
 }
 
+/* 1) Only draw the tick on disabled, NON-passive cells */
+.airbnb-calendar-container .rdrDay:not(.rdrDayPassive).rdrDayDisabled .rdrDayNumber::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 68% !important;
+  height: 1.12px !important;
+  background: rgba(55, 65, 81, 0.78) !important;
+  transform: translate(-50%, -50%) rotate(45deg) !important;
+  border-radius: 2px !important;
+  pointer-events: none !important;
+}
+
+/* 2) Make sure passive cells NEVER show the tick */
+.airbnb-calendar-container .rdrDay.rdrDayPassive .rdrDayNumber::after {
+  content: none !important;
+  display: none !important;
+}
 
 
-
-            
-                                                       
+                                            
                                                     `
                                         }} />
                                     </div>
