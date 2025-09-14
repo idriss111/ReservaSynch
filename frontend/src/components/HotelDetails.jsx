@@ -52,10 +52,13 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     const [leftMonth, setLeftMonth] = useState(
         new Date(todayRef.current.getFullYear(), todayRef.current.getMonth(), 1)
     );
-
+    // NEW: roompot checkout dates (as a Set of 'yyyy-MM-dd' for O(1) checks)
+    const [roompotCheckoutSet, setRoompotCheckoutSet] = useState(new Set());
     const [dateRange, setDateRange] = useState([EMPTY_RANGE]);
     const hasRealRange =
         !!selectedCheckin && !!dateRange[0].endDate && dateRange[0].endDate > selectedCheckin;
+    const hasStart = !!selectedCheckin;
+    const hasEnd   = hasRealRange; // endDate exists and > start
     const pickerRanges = useMemo(() => {
         const fallback = selectedCheckin || dateRange[0].endDate || leftMonth;
         return [{
@@ -251,6 +254,31 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             setRoompotArrivalDates([]);
         }
     }
+    // NEW: fetch Roompot checkout days for a chosen arrival
+    async function fetchRoompotCheckoutDays(arrivalDate) {
+        try {
+            const arrivalIso = format(arrivalDate, 'yyyy-MM-dd'); // date-fns
+            const qs = new URLSearchParams({
+                resourceId: String(ROOMPOT_PARAMS.resourceId),
+                objectId:   String(ROOMPOT_PARAMS.objectId),
+                arrival:    arrivalIso,
+            }).toString();
+
+            const res = await fetch(`http://localhost:8080/api/roompot/departure-days?${qs}`);
+            const isoDates = res.ok ? await res.json() : [];       // ["2025-10-09", ...]
+            const dates    = isoDates.map(d => parseISO(d));       // keep your Date[] too
+
+            // Drive your existing logic that uses availableCheckoutDates…
+            setAvailableCheckoutDates(dates);
+            // …and keep a fast hash set for painting / validation
+            setRoompotCheckoutSet(new Set(isoDates));
+        } catch (err) {
+            console.error('[Roompot] failed to load checkout days', err);
+            setAvailableCheckoutDates([]);
+            setRoompotCheckoutSet(new Set());
+        }
+    }
+
 
     useEffect(() => {
         fetchRoompotArrivalDays();
@@ -358,6 +386,9 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             if (date <= selectedCheckin) {
                 return true;
             }
+            if (roompotCheckoutSet.size > 0) {
+                return !roompotCheckoutSet.has(toISO(date));
+            }
             // Return true if it's NOT an available checkout date
             return !isAvailableCheckout;
         }
@@ -457,65 +488,68 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     const customDayContent = (day) => {
         const keyISO = format(day, 'yyyy-MM-dd');
 
-        // pre-painted by cadence rule:
-        let isNotArrival  = cadenceOkDays?.has?.(keyISO)  || false; // light green
+        // 1) baseline “pre-painted” state (this MUST stay no matter what)
+        let isNotArrival  = cadenceOkDays?.has?.(keyISO)  || false; // pale-green
         let isNotBookable = cadenceBadDays?.has?.(keyISO) || false; // red
 
-        const isCheckinDate  = selectedCheckin && isSameDay(day, selectedCheckin);
-        const isCheckoutDate = dateRange[0].endDate && isSameDay(day, dateRange[0].endDate);
-        const isToday        = isSameDay(day, new Date());
+        const isCheckinDate     = selectedCheckin && isSameDay(day, selectedCheckin);
+        const isCheckoutDate    = dateRange[0].endDate && isSameDay(day, dateRange[0].endDate);
+        const isToday           = isSameDay(day, new Date());
         const isBelvillaCheckin = availableCheckinDates.some(d => isSameDay(d, day));
         const isRoompotArrival  = isRoompotArrivalDay(day);
         const isBelvillaOnly    = isBelvillaCheckin && !isRoompotArrival;
+        const isRoompotCheckout = roompotCheckoutSet.has(keyISO);
 
+        // 2) keep the arrival pill ALWAYS visible (this is the key change)
+        const showArrivalFlag = isRoompotArrival;
 
-        const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+        // 3) overlayOnly blocks clicks but does NOT repaint the cell
+        let overlayOnly = false;
+
+        const today0 = new Date(); today0.setHours(0,0,0,0);
 
         if (day < today0) {
-            isNotArrival = false;
-            isNotBookable = false;
+            overlayOnly = true;                          // past → block, keep look
         } else if (!isDateInLoadedPeriod(day)) {
-            // outside loaded period → blocked
-            isNotBookable = true;
+            overlayOnly = true;                          // not loaded → block, keep look
+        } else if (selectedCheckin && roompotCheckoutSet.size > 0) {
+            // After a start is chosen and we have real checkout days
+            if (isCheckinDate) {
+                // start stays fully clickable
+            } else if (day <= selectedCheckin) {
+                overlayOnly = true;                        // before/at start → block
+            } else if (isRoompotCheckout) {
+                // allowed checkout → ensure no blocking flags survive
+                isNotArrival = false;
+                isNotBookable = false;
+            } else {
+                // any other day after start → keep original painting, just block
+                overlayOnly = true;
+            }
         } else {
-            // only run legacy logic if cadence didn't already paint this cell
+            // Pre-pick fallback (same logic you had before)
             if (!isNotArrival && !isNotBookable) {
                 if (isBelvillaOnly) {
-                    // belvilla check-in that’s not a roompot arrival → pale green
-                    isNotArrival = true;
-                } else if (isRoompotArrival) {
-                    // clickable (dark green); nothing to do
-                } else if (selectedCheckin && isRoompotArrivalDay(selectedCheckin)) {
-                    // if a roompot arrival is selected, the window until the next arrival is pale green
-                    const nextArrival = getNextArrivalDay(selectedCheckin);
-                    const inWindow =
-                        day > selectedCheckin &&
-                        (nextArrival ? day < nextArrival : day <= addDays(selectedCheckin, 14));
-
-                    if (inWindow) {
-                        isNotArrival = true;
-                    } else {
-                        const okFromBackend = availableCheckoutDates.some(d => isSameDay(d, day));
-                        if (!okFromBackend) isNotBookable = true;
-                    }
-                } else {
+                    isNotArrival = true;                     // pale green
+                } else if (!isRoompotArrival) {
                     const okFromBackend = availableCheckoutDates.some(d => isSameDay(d, day));
-                    if (!okFromBackend) isNotBookable = true;
+                    if (!okFromBackend) isNotBookable = true; // red
                 }
             }
         }
 
-        // block interaction on red / pale-green cells
         const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
 
         return (
             <>
-                {isRoompotArrival  && <span className="flag-roompot" aria-hidden="true" />}
-                {isNotArrival      && <span className="flag-not-arrival" aria-hidden="true" />}
+                {showArrivalFlag   && <span className="flag-roompot"  aria-hidden="true" />}
+                {isRoompotCheckout && <span className="flag-checkout" aria-hidden="true" />}
+                {isNotArrival      && <span className="flag-not-arrival"  aria-hidden="true" />}
                 {isNotBookable     && <span className="flag-not-bookable" aria-hidden="true" />}
-                {isCheckinDate     && <span className="flag-start" aria-hidden="true" />}
-                {isCheckoutDate    && <span className="flag-end" aria-hidden="true" />}
-                {(isNotArrival || isNotBookable) && (
+                {isCheckinDate     && <span className="flag-start"    aria-hidden="true" />}
+                {isCheckoutDate    && <span className="flag-end"      aria-hidden="true" />}
+
+                {(overlayOnly || isNotArrival || isNotBookable) && (
                     <span
                         className="absolute inset-0 z-10"
                         onPointerDown={stop}
@@ -533,40 +567,29 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
         );
     };
 
+
+
     const handleDateChange = async (item) => {
         const newStartDate = item.selection.startDate;
         const newEndDate   = item.selection.endDate;
 
         if (!selectedCheckin || newStartDate.getTime() !== selectedCheckin.getTime()) {
-            await fetchCheckoutDates(newStartDate);
+            // picking/repicking the start → load the *real* checkout list from Roompot
+            await fetchRoompotCheckoutDays(newStartDate);   // fills availableCheckoutDates + roompotCheckoutSet
             setSelectedCheckin(newStartDate);
             setDateRange([{ startDate: newStartDate, endDate: newStartDate, key: 'selection' }]);
         } else {
-             // hard cap: max 21 nights
-                  const nights = differenceInCalendarDays(newEndDate, selectedCheckin);
-                if (nights <= 0 || nights > MAX_NIGHTS) return;
+            // hard cap: max 21 nights
+            const nights = differenceInCalendarDays(newEndDate, selectedCheckin);
+            if (nights <= 0 || nights > MAX_NIGHTS) return;
 
-            const isValidCheckoutFromBackend = availableCheckoutDates.some(date =>
-                isSameDay(date, newEndDate)
-            );
+            // NEW: use the checkout set if present (truth source)
+            const isValidCheckoutFromBackend =
+                roompotCheckoutSet.size > 0
+                    ? roompotCheckoutSet.has(format(newEndDate, 'yyyy-MM-dd'))
+                    : availableCheckoutDates.some(date => isSameDay(date, newEndDate));
 
-            const isValidRoompotCheckout =
-                selectedCheckin &&
-                isRoompotArrivalDay(selectedCheckin) &&
-                (() => {
-                    const nextArrivalDay = getNextArrivalDay(selectedCheckin);
-                    if (nextArrivalDay) {
-                                return newEndDate > selectedCheckin && newEndDate < nextArrivalDay;
-                                 return newEndDate > selectedCheckin &&
-                                            newEndDate < nextArrivalDay &&
-                                            differenceInCalendarDays(newEndDate, selectedCheckin) <= MAX_NIGHTS;
-                    }
-                           const maxCheckoutDate = addDays(selectedCheckin, Math.min(14, MAX_NIGHTS));
-                          return newEndDate > selectedCheckin && newEndDate <= maxCheckoutDate;
-                })();
-
-            const isValidCheckout = (isValidCheckoutFromBackend || isValidRoompotCheckout)
-                && (newEndDate > selectedCheckin);
+            const isValidCheckout = isValidCheckoutFromBackend && (newEndDate > selectedCheckin);
 
             if (isValidCheckout) {
                 setDateRange([{ startDate: selectedCheckin, endDate: newEndDate, key: 'selection' }]);
@@ -576,6 +599,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             }
         }
     };
+
 
     const handleReservation = () => {
         // Format dates for URL (DD/MM/YYYY format for European sites)
@@ -1023,16 +1047,25 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                 </div>
 
                                                 {/* Instructions */}
-                                                {!selectedCheckin && (
+                                                {/* Instructions */}
+                                                {!hasStart && (
                                                     <div className="modal-instruction modal-instruction-blue">
-                                                        Bitte wählen Sie zuerst ein Check‑in‑Datum. Die Verfügbarkeiten sind nicht markiert.
+                                                        Bitte wählen Sie zuerst ein Check-in-Datum. Die Verfügbarkeiten sind nicht markiert.
                                                     </div>
                                                 )}
-                                                {selectedCheckin && availableCheckoutDates.length > 0 && (
+
+                                                {hasStart && !hasEnd && (
+                                                    <div className="modal-instruction modal-instruction-rose">
+                                                        Check-in ausgewählt. Bitte wählen Sie nun ein Check-out-Datum (nicht markiert).
+                                                    </div>
+                                                )}
+
+                                                {hasEnd && (
                                                     <div className="modal-instruction modal-instruction-green">
-                                                        Check-in ausgewählt. Bitte wählen Sie nun ein Check-out Datum(nicht markiert).
+                                                        Check-out erfolgreich ausgewählt. Schließen Sie Ihre Buchung ab.
                                                     </div>
                                                 )}
+
 
                                                 {/* Date Range Picker Container */}
                                                 <div className="calendar-wrapper">
@@ -1066,14 +1099,14 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 
                                                             disabledDay={(date) => {
                                                                 const t = todayRef.current;
-                                                                if (date < t) return true;
-                                                                if (!isDateInLoadedPeriod(date)) return true;
-                                                                if (selectedCheckin) {
-                                                                         const maxCheckout = addDays(selectedCheckin, MAX_NIGHTS);
-                                                                         if (date > maxCheckout) return true;
-                                                                       }
+                                                                if (date < t) return true;                 // past -> disabled
+                                                                if (!isDateInLoadedPeriod(date)) return true; // outside loaded period -> disabled
+                                                                // Do NOT disable dates after a start anymore.
+                                                                // The overlay in customDayContent will block clicks for “not checkout” days.
                                                                 return false;
                                                             }}
+
+
 
                                                             dayContentRenderer={customDayContent}
                                                             monthDisplayFormat="MMMM yyyy"
@@ -1096,6 +1129,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                             setDateRange([{ startDate: null, endDate: null, key: 'selection' }]);
                                                             setSelectedCheckin(null);
                                                             setAvailableCheckoutDates([]);
+                                                            setRoompotCheckoutSet(new Set());
                                                             setPricing(null);
                                                         }}
 
@@ -1108,7 +1142,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
                                                         onClick={() => setShowDatePicker(false)}
                                                         className="close-btn"
                                                     >
-                                                        Schließen
+                                                        {hasEnd ? 'Buchung Abschließen' : 'Schließen'}
                                                     </button>
                                                 </div>
                                             </div>
@@ -1468,13 +1502,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
 .airbnb-calendar-container .rdrDayToday .rdrDayNumber { font-weight: 700 !important; color: #92400e !important; }
 .airbnb-calendar-container .rdrDayToday .rdrDayNumber:after { display: none !important; }
 
-/* Hovered */
-.airbnb-calendar-container .rdrDayHovered {
-  background: linear-gradient(135deg,#f0fdf4,#dcfce7) !important;
-  border: 2px solid #5CE65C !important;
-  box-shadow: 0 2px 8px rgba(92,230,92,.2) !important;
-  color: #166534 !important;
-}
+
 
 /* Selected edges + active */
 .airbnb-calendar-container .rdrDayActive [style*="rgb(236, 72, 153)"],
@@ -1550,12 +1578,7 @@ airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
   font-weight: 700 !important; font-size: 1.125rem !important; color: #1f2937 !important; letter-spacing: -0.025em !important;
 }
 
-/* Focus */
-.airbnb-calendar-container .rdrDay:focus {
-  outline: none !important;
-  border: 2px solid #3b82f6 !important;
-  box-shadow: 0 0 0 3px rgba(59,130,246,.2) !important;
-}
+
 
 /* =========================
    RESPONSIVE
@@ -1721,14 +1744,7 @@ airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
   }
 
   /* Kill library hover everywhere… */
-  .airbnb-calendar-container .rdrDayHovered,
-  .airbnb-calendar-container .rdrDay:hover {
-    background: inherit !important;
-    border-color: inherit !important;
-    box-shadow: none !important;
-    transform: none !important;
-    color: inherit !important;
-  }
+  
 
   /* …and hard-disable red & light-green days (no hover, no click) */
   .airbnb-calendar-container .rdrDay:has(.flag-not-bookable),
@@ -1739,8 +1755,7 @@ airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
 
   /* Allow a subtle hover ONLY on truly clickable days (incl. passive) */
   .airbnb-calendar-container .rdrDay:not(.rdrDayDisabled):has(.flag-roompot):hover,
-  .airbnb-calendar-container .rdrDay:not(.rdrDayDisabled):has(.flag-start):hover,
-  .airbnb-calendar-container .rdrDay:not(.rdrDayDisabled):has(.flag-end):hover {
+   {
     background: rgba(22,163,74,.10) !important;
     border-color: #16a34a !important;
   }
@@ -1750,19 +1765,9 @@ airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
 
   /* Start / End edges when the lib didn't set them (e.g., passive cells) */
   /* Start/End — subtle, neutral ring; no fill, keep number color */
-.airbnb-calendar-container .rdrDay:not(.rdrDayStartEdge):has(.flag-start),
-.airbnb-calendar-container .rdrDay:not(.rdrDayEndEdge):has(.flag-end) {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: inset 0 0 0 2px #cbd5e1 !important; /* slate-300 */
-  border-radius: 10px !important;
-}
 
-.airbnb-calendar-container .rdrDay:not(.rdrDayStartEdge):has(.flag-start) .rdrDayNumber,
-.airbnb-calendar-container .rdrDay:not(.rdrDayEndEdge):has(.flag-end) .rdrDayNumber {
-  color: inherit !important;
-  font-weight: 600 !important;
-}
+
+
 
   .airbnb-calendar-container .rdrDay:not(.rdrDayStartEdge):has(.flag-start) .rdrDayNumber,
   .airbnb-calendar-container .rdrDay:not(.rdrDayEndEdge):has(.flag-end) .rdrDayNumber {
@@ -1819,36 +1824,9 @@ airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
     cursor: pointer !important;
   }
 /* Default: NO visual hover anywhere */
-.airbnb-calendar-container .rdrDayHovered,
-.airbnb-calendar-container .rdrDay:hover {
-  background: inherit !important;
-  border-color: inherit !important;
-  box-shadow: none !important;
-  color: inherit !important;
-  transform: none !important;
-}
 
-@supports selector(:has(*)) {
-  .airbnb-calendar-container .rdrDay:has(.flag-not-bookable):hover,
-  .airbnb-calendar-container .rdrDay:has(.flag-not-bookable).rdrDayHovered {
-    background: rgba(244,143,177,.4) !important;
-    border: 1px solid rgba(244,143,177,.6) !important;
-    color: #111827 !important;
-    box-shadow: none !important;
-    transform: none !important;
-    cursor: not-allowed !important;
-  }
 
-  .airbnb-calendar-container .rdrDay:has(.flag-not-arrival):hover,
-  .airbnb-calendar-container .rdrDay:has(.flag-not-arrival).rdrDayHovered {
-    background: rgba(34,197,94,.15) !important;
-    border: 1px solid rgba(34,197,94,.5) !important;
-    color: #15803d !important;
-    box-shadow: none !important;
-    transform: none !important;
-    cursor: not-allowed !important;
-  }
-}
+
 .airbnb-calendar-container .rdrDay:hover::before { width: 0 !important; height: 0 !important; }
 /* Re-enable hover ONLY for clickable days (have arrival flag, not red/pale green) */
 @supports selector(:has(*)) {
@@ -2015,6 +1993,86 @@ airbnb-calendar-container .rdrDayDisabled .rdrDayNumber {
   content: none !important;
   display: none !important;
 }
+
+/* NEW: make Roompot checkouts look like arrivals (dark green pill) */
+.airbnb-calendar-container .rdrDayNumber:has(.flag-checkout) {
+  background: #22c55e !important;
+  border: 2px solid #16a34a !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  border-radius: 8px !important;
+}
+
+/* make passive cells with checkout flag clickable */
+.airbnb-calendar-container .rdrDay.rdrDayPassive:has(.flag-checkout) {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+/* give the same strong hover as arrivals */
+@supports selector(.rdrDay:has(*)) {
+  .airbnb-calendar-container .rdrDay:not(.rdrDayDisabled):has(.flag-checkout):hover {
+    background: rgba(22,163,74,.10) !important;
+    border-color: #16a34a !important;
+  }
+}
+
+
+
+/* also nuke any focus outline that looks like a ring */
+.airbnb-calendar-container .rdrDay:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+/* firefox inner focus */
+.airbnb-calendar-container .rdrDay::-moz-focus-inner { border: 0 !important; }
+
+/* checkin+checkout ausgewählt notice */
+.modal-instruction-rose {
+  background: linear-gradient(135deg, #fff1f2, #fdf2f8) !important; /* rose-50 → pink-50 */
+  color: #9d174d !important;  /* rose-700 for readable text */
+  border: 1px solid #fecdd3 !important; /* rose-200 */
+  box-shadow:
+    0 2px 8px -4px rgba(244, 63, 94, .10),
+    0 1px 0 rgba(255,255,255,.60) inset !important;
+}
+
+/* small white dash on top for check-in & check-out days */
+.airbnb-calendar-container .rdrDayNumber {
+  position: relative;               /* anchor for the dash */
+}
+
+@supports selector(:has(*)) {
+  .airbnb-calendar-container .rdrDayNumber:has(.flag-start)::after,
+  .airbnb-calendar-container .rdrDayNumber:has(.flag-end)::after {
+    content: "";
+    position: absolute;
+    top: 4px;                       /* move up/down to taste */
+    left: 50%;
+    transform: translateX(-50%);
+    width: 38%;                     /* 10–18px depending on cell width */
+    max-width: 16px;
+    height: 2px;
+    background: #fff;               /* white dash */
+    border-radius: 999px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.15); /* subtle contrast on dark green */
+    pointer-events: none;
+    z-index: 2;
+  }
+}
+
+/* (optional) make them asymmetric so users instantly see which is which)
+.airbnb-calendar-container .rdrDayNumber:has(.flag-start)::after { left: 30%; }
+.airbnb-calendar-container .rdrDayNumber:has(.flag-end)::after   { left: 70%; }
+
+
+
+
+
+
+
+
+
 
 
                                             
