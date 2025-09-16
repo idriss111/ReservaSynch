@@ -80,26 +80,20 @@ public class HotelController {
         }
     }
 
-
+    // belvilla checkin dates from api
     @GetMapping("/{hotelId}/availability/checkin-dates")
     public ResponseEntity<List<String>> getAvailableCheckinDates(
             @PathVariable Long hotelId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
             @RequestParam(defaultValue = "3") Integer months) {
-
         try {
-            // If no start date provided, we will use current date
             LocalDate effectiveStart = start != null ? start : LocalDate.now();
-
             logger.info("Getting available checkin dates for hotel {} starting from {} for {} months",
                     hotelId, effectiveStart, months);
-
             List<LocalDate> checkinDates = belvillaApiService.getAvailableCheckinDates(hotelId, effectiveStart, months);
-
             List<String> checkinDateStrings = checkinDates.stream()
                     .map(LocalDate::toString)
                     .collect(Collectors.toList());
-
             logger.info("Found {} available checkin dates for hotel {}", checkinDateStrings.size(), hotelId);
             return ResponseEntity.ok(checkinDateStrings);
 

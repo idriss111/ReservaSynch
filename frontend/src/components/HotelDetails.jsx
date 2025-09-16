@@ -488,55 +488,88 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
     const customDayContent = (day) => {
         const keyISO = format(day, 'yyyy-MM-dd');
 
-        // 1) baseline “pre-painted” state (this MUST stay no matter what)
-        let isNotArrival  = cadenceOkDays?.has?.(keyISO)  || false; // pale-green
+        // 1) baseline paints from cadence (generated in recomputeCadencePaint)
+        let isNotArrival  = cadenceOkDays?.has?.(keyISO)  || false; // pale green
         let isNotBookable = cadenceBadDays?.has?.(keyISO) || false; // red
 
-        const isCheckinDate     = selectedCheckin && isSameDay(day, selectedCheckin);
-        const isCheckoutDate    = dateRange[0].endDate && isSameDay(day, dateRange[0].endDate);
+        // Per-day facts
+        const isCheckinDate     = !!selectedCheckin && isSameDay(day, selectedCheckin);
+        const isCheckoutDate    = !!dateRange[0].endDate && isSameDay(day, dateRange[0].endDate);
         const isToday           = isSameDay(day, new Date());
-        const isBelvillaCheckin = availableCheckinDates.some(d => isSameDay(d, day));
         const isRoompotArrival  = isRoompotArrivalDay(day);
-        const isBelvillaOnly    = isBelvillaCheckin && !isRoompotArrival;
         const isRoompotCheckout = roompotCheckoutSet.has(keyISO);
 
-        // 2) keep the arrival pill ALWAYS visible (this is the key change)
+        // Keep the arrival pill visible
         const showArrivalFlag = isRoompotArrival;
 
-        // 3) overlayOnly blocks clicks but does NOT repaint the cell
+        // Overlay blocks clicks but does NOT repaint the cell
         let overlayOnly = false;
 
         const today0 = new Date(); today0.setHours(0,0,0,0);
 
         if (day < today0) {
-            overlayOnly = true;                          // past → block, keep look
+            overlayOnly = true; // past → block
         } else if (!isDateInLoadedPeriod(day)) {
-            overlayOnly = true;                          // not loaded → block, keep look
+            overlayOnly = true; // outside loaded period → block
         } else if (selectedCheckin && roompotCheckoutSet.size > 0) {
-            // After a start is chosen and we have real checkout days
+            // POST-PICK: start chosen and we have real checkout days
             if (isCheckinDate) {
-                // start stays fully clickable
+                // start stays clickable
             } else if (day <= selectedCheckin) {
-                overlayOnly = true;                        // before/at start → block
+                overlayOnly = true; // before/at start → block
             } else if (isRoompotCheckout) {
-                // allowed checkout → ensure no blocking flags survive
+                // allowed checkout → clear blocking paints
                 isNotArrival = false;
                 isNotBookable = false;
             } else {
-                // any other day after start → keep original painting, just block
-                overlayOnly = true;
+                overlayOnly = true; // any other day after start → block
             }
         } else {
-            // Pre-pick fallback (same logic you had before)
+            // read please the mathematic logic below to more understand
             if (!isNotArrival && !isNotBookable) {
-                if (isBelvillaOnly) {
-                    isNotArrival = true;                     // pale green
-                } else if (!isRoompotArrival) {
-                    const okFromBackend = availableCheckoutDates.some(d => isSameDay(d, day));
-                    if (!okFromBackend) isNotBookable = true; // red
+                if (!isRoompotArrival) {
+                    isNotArrival = true;  // pale-green fallback
+                } else {
+                    isNotArrival = false;
+                    isNotBookable = false;
                 }
             }
         }
+                                /*
+                        Boolean fallback for PRE-PICK stage (runs only if cadence didn’t already paint).
+
+                        Let:
+                          A := isNotArrival   // light-green “not-arrival” (blocked)
+                          B := isNotBookable  // red “not-bookable” (blocked)
+                          R := isRoompotArrival  // dunkel grün if this day is an official arrival day
+
+                        Code:
+                          if (!A && !B) {
+                            if (!R) {
+                              A = true;              // fallback: mark as NOT-ARRIVAL (pale-green, block)
+                            } else {
+                              A = false; B = false;  // arrival day: keep it clean & clickable
+                            }
+                          }
+                       Nur wenn der Tag aktuell weder “Nicht-Anreise” noch “Nicht buchbar” markiert ist (!isNotArrival && !isNotBookable):
+
+                        Falls es kein Roompot-Anreisetag ist (!isRoompotArrival), markieren wir ihn als Nicht-Anreise: isNotArrival = true (blassgrün).
+
+                        Sonst (es ist ein Roompot-Anreisetag), stelle sicher, dass beide Flags frei bleiben: isNotArrival = false; isNotBookable = false;.
+
+
+                        Notes:
+                        - The outer guard (!A && !B) means “only act if no decision was made yet”.
+                        - We never overwrite cadence paints (A or B already true).
+
+                        Equivalent boolean form:
+                          A' = (!A && !B) ? (!R) : A
+                          B' = (!A && !B) ? (false) : B   // under the guard B is already false
+
+                        Truth table when the guard holds (A=0, B=0):
+                          R = 0  →  A' = 1, B' = 0   (pale-green not-arrival)
+                          R = 1  →  A' = 0, B' = 0   (arrival → clean)
+                        */
 
         const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
 
@@ -566,6 +599,7 @@ const HotelDetails = ({ hotelId = 100003163, onBack, searchInfo }) => {
             </>
         );
     };
+
 
 
 

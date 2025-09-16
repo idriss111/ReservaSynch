@@ -17,7 +17,7 @@ public class PayablePriceInfo {
     private String priceBreakupTitle;  // "Gesamtbetrag"
 
     @JsonProperty("price")
-    private String price;  // "€2386"
+    private String price;  // original price
 
     @JsonProperty("price_with_deposit")
     private String priceWithDeposit;  // "€2386"

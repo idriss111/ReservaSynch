@@ -299,20 +299,16 @@ public class BelvillaApiService {
      * @return List of available check-in dates
      */
     public List<LocalDate> getAvailableCheckinDates(Long hotelId, LocalDate startDate, Integer monthsAhead) {
-        // Set defaults if null
         if (startDate == null) {
-            // Default: 1st of current month
             LocalDate now = LocalDate.now();
             startDate = LocalDate.of(now.getYear(), now.getMonth(), 1);
         } else {
-            // Ensure we start from the 1st of the provided month
+            //To Ensure we start from the 1st of the provided month
             startDate = LocalDate.of(startDate.getYear(), startDate.getMonth(), 1);
         }
-
         if (monthsAhead == null) {
             monthsAhead = 3; // Default: 3 months ahead
         }
-
         logger.info("Getting checkin dates for hotel {} from {} for {} months",
                 hotelId, startDate, monthsAhead);
 
